@@ -19,10 +19,6 @@ A Python tool for processing pangenome structural variants and generating PLINK 
 conda create -n panherit python=3.8
 conda activate panherit
 
-# Install MUSCLE (Option 1: with sudo)
-wget https://drive5.com/muscle5/muscle5.1.linux_intel64
-chmod +x muscle5.1.linux_intel64
-sudo mv muscle5.1.linux_intel64 /usr/local/bin/muscle5
 
 # OR Install MUSCLE (Option 2: without sudo)
 mkdir -p ~/local/bin
@@ -36,12 +32,6 @@ cd pangenome-heritability
 conda install -c conda-forge pandas numpy biopython click tqdm
 pip install -e .
 ```
-
-### Basic Usage
-```bash
-panherit --vcf input.vcf --ref reference.fasta --out output_dir
-```
-
 ## Installation Options
 
 ### Using Mamba (Faster Alternative)
@@ -66,54 +56,156 @@ conda activate panherit
 
 For detailed installation instructions, see [Installation Guide](docs/installation.md).
 
-## Command Line Options
+# Usage Guide
 
+The Pangenome Heritability Tool provides several commands to process variants, perform alignments, and generate PLINK files. Each step can be run independently or as part of a pipeline.
+
+## Command Overview
+
+The tool provides four main commands:
+- `process-vcf`: Process VCF file and group overlapping variants
+- `run-alignments`: Perform sequence alignments using MUSCLE
+- `process-kmers`: Generate and analyze k-mer windows
+- `convert-to-plink`: Convert results to PLINK format
+
+## Detailed Usage
+
+### Step 1: Process VCF File
 ```bash
-panherit --help
-
-Options:
-  --vcf TEXT         Input VCF file containing structural variants [required]
-  --ref TEXT         Reference genome FASTA file [required]
-  --out TEXT         Output directory [required]
-  --threads INTEGER  Number of parallel processing threads [default: 1]
-  --window-size INTEGER  K-mer window size [default: 4]
-  --help            Show this message and exit
+# Process VCF and generate FASTA sequences
+panherit process-vcf \
+    --vcf input.vcf \
+    --ref reference.fasta \
+    --out output_directory
 ```
+Options:
+- `--vcf`: Input VCF file containing structural variants
+- `--ref`: Reference genome FASTA file
+- `--out`: Output directory for processed variants and FASTA files
+
+### Step 2: Run Alignments
+```bash
+# Perform sequence alignments
+panherit run-alignments \
+    --grouped-variants output_directory/variants.fasta \
+    --ref reference.fasta \
+    --out alignments_directory \
+    --threads 4
+```
+Options:
+- `--grouped-variants`: FASTA file from previous step
+- `--ref`: Reference genome FASTA file
+- `--out`: Output directory for alignments
+- `--threads`: Number of parallel threads (default: 1)
+
+### Step 3: Process K-mer Windows
+```bash
+# Process k-mer windows
+panherit process-kmers \
+    --alignments alignments_directory \
+    --window-size 4 \
+    --out kmers_directory
+```
+Options:
+- `--alignments`: Directory containing alignment results
+- `--window-size`: Size of k-mer windows (default: 4)
+- `--out`: Output directory for k-mer results
+
+### Step 4: Convert to PLINK
+```bash
+# Generate PLINK files
+panherit convert-to-plink \
+    --kmer-results kmers_directory \
+    --out plink_files
+```
+Options:
+- `--kmer-results`: Directory containing k-mer analysis results
+- `--out`: Output directory for PLINK files
 
 ## Output Files
 
+Each step produces specific output files:
+
+### Process VCF
 ```
-output_dir/
-├── temp_alignments/        # MUSCLE alignment files
-├── variants.bed           # PLINK binary file
-├── variants.bim           # PLINK variant information
-├── variants.fam           # PLINK sample information
-└── pipeline.log          # Runtime log
+output_directory/
+├── variants.fasta      # Grouped variant sequences
+└── variants.log       # Processing log file
 ```
 
-## Python API Usage
-
-```python
-from pangenome_heritability.config import Config
-from pangenome_heritability.variant_processing import process_variants
-from pangenome_heritability.alignment import run_alignments
-from pangenome_heritability.kmer import process_windows
-from pangenome_heritability.genotype import convert_to_plink
-
-# Configure and run pipeline
-config = Config(
-    vcf_file="input.vcf",
-    ref_fasta="reference.fa",
-    output_dir="results",
-    threads=4,
-    window_size=4
-)
-
-variants = process_variants(config)
-alignments = run_alignments(config, variants)
-windows = process_windows(config, alignments)
-bfiles = convert_to_plink(config, windows)
+### Alignments
 ```
+alignments_directory/
+├── aligned/           # MUSCLE alignment results
+└── alignment.log     # Alignment log file
+```
+
+### K-mer Windows
+```
+kmers_directory/
+├── windows.csv       # K-mer window analysis
+└── comparison.log    # Processing log file
+```
+
+### PLINK Files
+```
+plink_files/
+├── variants.bed      # Binary genotype file
+├── variants.bim      # Variant information file
+└── variants.fam      # Sample information file
+```
+
+## Example Pipeline
+
+Complete pipeline example:
+```bash
+# 1. Process VCF
+panherit process-vcf \
+    --vcf input.vcf \
+    --ref reference.fasta \
+    --out step1_output
+
+# 2. Run alignments
+panherit run-alignments \
+    --grouped-variants step1_output/variants.fasta \
+    --ref reference.fasta \
+    --out step2_output \
+    --threads 4
+
+# 3. Process k-mers
+panherit process-kmers \
+    --alignments step2_output \
+    --window-size 4 \
+    --out step3_output
+
+# 4. Generate PLINK files
+panherit convert-to-plink \
+    --kmer-results step3_output \
+    --out final_output
+```
+
+## Notes
+
+- Each command will create its output directory if it doesn't exist
+- Log files are generated for each step
+- Use `--help` with any command for detailed options
+- For large datasets, adjust thread count based on available resources
+
+## Error Handling
+
+If any step fails, the tool will:
+1. Display an error message
+2. Log the error details
+3. Exit with a non-zero status code
+
+Example error checking:
+```bash
+panherit process-vcf --vcf input.vcf --ref ref.fa --out output || {
+    echo "VCF processing failed"
+    exit 1
+}
+```
+
 
 ## Documentation
 
@@ -134,10 +226,9 @@ bfiles = convert_to_plink(config, windows)
 
 ## Performance Tips
 
-1. Use mamba for faster dependency installation
-2. Adjust thread count based on available CPU cores
-3. Monitor memory usage for large datasets
-4. Ensure sufficient disk space for temporary files
+
+1. Adjust thread count based on available CPU cores
+2. Ensure sufficient disk space for temporary files
 
 ## Troubleshooting
 
@@ -162,4 +253,4 @@ If you use this tool in your research, please cite:
 
 For questions and support:
 - Open an issue on GitHub
-- Email: [Your contact information]
+- Email: yuanpeixiong@westlake.edu.cn
