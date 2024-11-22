@@ -97,3 +97,11 @@ def setup_logging(log_file: Optional[Union[str, Path]] = None,
 def get_logger(name: str = None) -> logging.Logger:
     """
     Get logger instance.
+
+    Args:
+        name: Name of the logger. If None, use the root logger.
+    
+    Returns:
+        Configured logger instance.
+    """
+    return logging.getLogger(name)
