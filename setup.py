@@ -22,7 +22,7 @@ setup(
     description="A tool for estimating heritability using pangenome structural variants",
     long_description=open("README.md").read(),
     long_description_content_type="text/markdown",
-    url="https://github.com/yourusername/pangenome_heritability",
+    url="https://github.com/PeixiongYuan/pangenome_heritability",
     classifiers=[
         "Programming Language :: Python :: 3",
         "License :: OSI Approved :: MIT License",
