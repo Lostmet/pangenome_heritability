@@ -3,7 +3,7 @@ from .config import Config
 from .variant_processing.vcf_parser import process_variants
 from .variant_processing.fasta_generator import generate_fasta_sequences
 from .alignment.muscle_wrapper import run_alignments
-from .kmer.window_generator import process_windows
+from .kmer.window_generator import process_alignments
 from .genotype.plink_converter import convert_to_plink
 
 @click.group()
@@ -58,7 +58,7 @@ def process_kmers(alignments: str, window_size: int, out: str):
     """Process K-mer windows based on alignments."""
     try:
         config = Config(alignments_dir=alignments, window_size=window_size, output_dir=out)
-        kmer_results = process_windows(config, alignments)
+        kmer_results = process_alignments(config, alignments)
         click.echo(f"K-mers processed. Results saved to {out}")
     except Exception as e:
         click.echo(f"Error in process-kmers: {str(e)}", err=True)
@@ -77,3 +77,5 @@ def convert_to_plink_cmd(kmer_results: str, out: str):
     except Exception as e:
         click.echo(f"Error in convert-to-plink: {str(e)}", err=True)
         raise click.Abort()
+if __name__ == "__main__":
+    cli()
