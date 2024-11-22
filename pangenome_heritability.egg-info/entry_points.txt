@@ -1,2 +1,0 @@
-[console_scripts]
-panherit = pangenome_heritability.cli:cli
