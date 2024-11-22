@@ -18,15 +18,22 @@ def cli():
 def process_vcf(vcf: str, ref: str, out: str):
     """Process VCF file, group overlapping variants, and generate FASTA."""
     try:
-        # Step 1
+        # Step 1: Configuration
         config = Config(vcf_file=vcf, ref_fasta=ref, output_dir=out)
         
-        # Step 2
-        grouped_variants = process_variants(config)
-        click.echo(f"Variants processed and grouped. Total groups: {len(grouped_variants)}")
+        # Step 2: Process variants
+        grouped_variants_list = process_variants(config)
+        click.echo(f"Variants processed and grouped. Total groups: {len(grouped_variants_list)}")
         
-        # Step 3
-        fasta_path = generate_fasta_sequences(config, grouped_variants)
+        # Step 2.1: Group variants by chromosome
+        grouped_variants_dict = {}
+        for group in grouped_variants_list:
+            if group.chrom not in grouped_variants_dict:
+                grouped_variants_dict[group.chrom] = []
+            grouped_variants_dict[group.chrom].append(group)
+        
+        # Step 3: Generate FASTA file
+        fasta_path = generate_fasta_sequences(config, grouped_variants_dict)
         click.echo(f"FASTA file generated: {fasta_path}")
         
     except Exception as e:

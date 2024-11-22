@@ -1,6 +1,7 @@
 from typing import Dict, List
 from ..config import Config
-from .vcf_parser import VariantGroup
+from .vcf_parser import VariantGroup, Variant
+import pysam
 
 def generate_fasta_sequences(config: Config, variant_groups: Dict[str, List[VariantGroup]]) -> str:
     """Generate FASTA file from variant groups"""
@@ -18,7 +19,7 @@ def generate_fasta_sequences(config: Config, variant_groups: Dict[str, List[Vari
                     # Write variant sequences
                     for variant in group.variants:
                         var_seq = generate_variant_sequence(ref_seq, variant, group.start)
-                        var_id = f"Variant_{chrom}_{i}_{variant['start']}_{variant['end']}"
+                        var_id = f"Variant_{chrom}_{i}_{variant.start}_{variant.end}"
                         fasta_out.write(f">{var_id}\n{var_seq}\n")
         
         return output_fasta
@@ -26,19 +27,19 @@ def generate_fasta_sequences(config: Config, variant_groups: Dict[str, List[Vari
     finally:
         ref_genome.close()
 
-def generate_variant_sequence(ref_seq: str, variant: dict, group_start: int) -> str:
+def generate_variant_sequence(ref_seq: str, variant: Variant, group_start: int) -> str:
     """Generate variant sequence based on reference sequence"""
-    rel_start = variant['start'] - group_start
-    rel_end = variant['end'] - group_start + 1
+    rel_start = variant.start - group_start
+    rel_end = variant.end - group_start + 1
     
-    if "<INV>" in variant['alts']:
+    if "<INV>" in variant.alt:
         # Handle inversion
         return (ref_seq[:rel_start] + 
                 reverse_complement(ref_seq[rel_start:rel_end]) +
                 ref_seq[rel_end:])
     else:
         # Handle other variant types
-        return ref_seq[:rel_start] + variant['alts'][0] + ref_seq[rel_end:]
+        return ref_seq[:rel_start] + variant.alt[0] + ref_seq[rel_end:]
 
 def reverse_complement(seq: str) -> str:
     """Generate reverse complement of DNA sequence"""
