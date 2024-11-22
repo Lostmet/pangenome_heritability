@@ -2,6 +2,7 @@ import os
 import subprocess
 from typing import Dict, NamedTuple
 import pandas as pd
+from ..config import Config
 
 class PlinkFiles(NamedTuple):
     bed: str

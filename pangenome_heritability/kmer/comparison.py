@@ -1,7 +1,7 @@
 from typing import List, Dict
 import pandas as pd
 import numpy as np
-
+from .window_generator import KmerWindow
 def compare_windows(windows: Dict[str, List[KmerWindow]]) -> pd.DataFrame:
     """Compare k-mer windows to reference sequence"""
     results = []

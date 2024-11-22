@@ -13,9 +13,10 @@ setup(
         "tqdm>=4.65.0",
     ],
     entry_points={
-        'console_scripts': [
-            'panherit=pangenome_heritability.cli:main',
-        ],
+    'console_scripts': [
+        'panherit=pangenome_heritability.cli:cli',
+    ],
+
     },
     author="PeixiongYuan",
     author_email="yuanpeixiong@westlake.edu.cn",
