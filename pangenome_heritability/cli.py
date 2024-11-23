@@ -40,7 +40,7 @@ def process_vcf(vcf: str, ref: str, out: str):
         click.echo(f"Error in process-vcf: {str(e)}", err=True)
         raise click.Abort()
 
-# Step 2: Run alignments
+# Run alignments
 @cli.command("run-alignments")
 @click.option('--grouped-variants', required=True, help='Grouped variants file')
 @click.option('--ref', required=True, help='Reference FASTA file')

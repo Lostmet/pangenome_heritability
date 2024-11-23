@@ -1,6 +1,7 @@
 from Bio import SeqIO
 from typing import Dict, List, Tuple
-
+import os
+import glob
 def process_alignments(alignment_dir: str) -> Dict[str, List[Tuple[str, str]]]:
     """Process MUSCLE alignment results"""
     alignments = {}
