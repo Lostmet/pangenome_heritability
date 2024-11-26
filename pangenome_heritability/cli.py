@@ -8,7 +8,7 @@ from .genotype.plink_converter import convert_to_plink
 
 @click.group()
 def cli():
-    """A CLI tool for pangenome heritability analysis."""
+    """A Python tool for pangenome heritability analysis."""
     pass
 #variant overlap and group
 @cli.command("process-vcf")
@@ -16,7 +16,7 @@ def cli():
 @click.option('--ref', required=True, help='Reference FASTA file')
 @click.option('--out', required=True, help='Output directory for processed variants and FASTA')
 def process_vcf(vcf: str, ref: str, out: str):
-    """Process VCF file, group overlapping variants, and generate FASTA."""
+    """Group overlapping variants, and generate FASTA."""
     try:
         # Step 1: Configuration
         config = Config(vcf_file=vcf, ref_fasta=ref, output_dir=out)
@@ -49,7 +49,14 @@ def process_vcf(vcf: str, ref: str, out: str):
 def run_alignments_cmd(grouped_variants: str, ref: str, out: str, threads: int):
     """Run alignments for grouped variants."""
     try:
-        config = Config(grouped_variants_file=grouped_variants, ref_fasta=ref, output_dir=out, threads=threads)
+        
+        config = Config(
+            grouped_variants_file=grouped_variants,
+            ref_fasta=ref,
+            output_dir=out,
+            threads=threads
+        )
+    
         alignments = run_alignments(config, grouped_variants)
         click.echo(f"Alignments completed. Output saved to {out}")
     except Exception as e:
