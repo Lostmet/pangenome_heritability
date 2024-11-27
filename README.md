@@ -102,7 +102,7 @@ Options:
 ```bash
 # Process k-mer windows
 panherit process-kmers \
-    --alignments alignments_directory \
+    --alignments temp_alignments \
     --window-size 4 \
     --out kmers_directory
 ```
@@ -135,9 +135,13 @@ output_directory/
 
 ### Alignments
 ```
-alignments_directory/
-├── aligned/           # MUSCLE alignment results
-└── alignment.log     # Alignment log file
+/path/to/output/
+├── temp_alignments/
+│   ├── Group_2_59_input.fasta
+│   ├── Group_2_59_aligned.fasta
+├── error_logs/
+│   ├── Group_2_59_input_error.log
+
 ```
 
 ### K-mer Windows

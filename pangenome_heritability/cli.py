@@ -1,9 +1,11 @@
 import click
+import os
+
 from .config import Config
 from .variant_processing.vcf_parser import process_variants
 from .variant_processing.fasta_generator import generate_fasta_sequences
 from .alignment.muscle_wrapper import run_alignments
-from .kmer.window_generator import process_alignments
+from .kmer.window_generator import process_fasta_files, save_kmer_results_to_csv
 from .genotype.plink_converter import convert_to_plink
 
 @click.group()
@@ -64,19 +66,29 @@ def run_alignments_cmd(grouped_variants: str, ref: str, out: str, threads: int):
         raise click.Abort()
 
 # Step 3: Process K-mer windows
-@cli.command("process-kmers")
+@click.command("process-kmers")
 @click.option('--alignments', required=True, help='Input alignments directory')
 @click.option('--window-size', default=4, help='K-mer window size')
 @click.option('--out', required=True, help='Output directory for K-mer results')
 def process_kmers(alignments: str, window_size: int, out: str):
     """Process K-mer windows based on alignments."""
     try:
-        config = Config(alignments_dir=alignments, window_size=window_size, output_dir=out)
-        kmer_results = process_alignments(config, alignments)
-        click.echo(f"K-mers processed. Results saved to {out}")
+        if not os.path.exists(alignments):
+            raise FileNotFoundError(f"Alignments directory not found: {alignments}")
+
+        logger.info(f"Processing alignments from {alignments} with window size {window_size}")
+        results = process_fasta_files(alignments, window_size)
+
+        output_file = os.path.join(out, "kmer_results.csv")
+        save_kmer_results_to_csv(results, output_file)
+
+        click.echo(f"K-mers processed. Results saved to {output_file}")
     except Exception as e:
         click.echo(f"Error in process-kmers: {str(e)}", err=True)
         raise click.Abort()
+
+
+
 
 # Step 4: Convert to PLINK
 @cli.command("convert-to-plink")

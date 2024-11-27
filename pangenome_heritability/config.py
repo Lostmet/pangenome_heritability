@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 import os
 from pathlib import Path
+from typing import Optional
 
 @dataclass
 class Config:
@@ -11,6 +12,7 @@ class Config:
     vcf_file: str = None
     ref_fasta: str = None
     grouped_variants_file: str = None
+    alignments_dir: Optional[str] = None
     
     def __post_init__(self):
         """Validate inputs and create output directory"""

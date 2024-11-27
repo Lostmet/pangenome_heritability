@@ -40,7 +40,7 @@ def run_muscle(input_fasta: Path, output_fasta: Path, use_super5: bool = False, 
     """Run MUSCLE alignment on a single group, optionally using Super5 method"""
     try:
         if use_super5:
-            command = ["muscle", "-super5", str(input_fasta), "-output", str(output_fasta)]
+            command = ["muscle", "-super5", str(input_fasta), "-output", str(output_fasta)] 
         else:
             command = ["muscle", "-align", str(input_fasta), "-output", str(output_fasta)]
         
