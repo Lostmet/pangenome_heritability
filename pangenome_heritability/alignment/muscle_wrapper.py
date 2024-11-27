@@ -64,9 +64,33 @@ def run_muscle(input_fasta: Path, output_fasta: Path, use_super5: bool = False, 
         )
 
 
+def run_mafft(input_fasta: Path, output_fasta: Path, log_dir: Path = None) -> None:
+    """Run MAFFT alignment as a fallback method."""
+    try:
+        command = ["mafft", "--thread", "20", str(input_fasta)]
+        with open(output_fasta, "w") as output_file:
+            subprocess.run(
+                command,
+                stdout=output_file,
+                stderr=subprocess.PIPE,
+                text=True,
+                check=True
+            )
+    except subprocess.CalledProcessError as e:
+        if log_dir:
+            log_dir.mkdir(parents=True, exist_ok=True)
+            error_log = log_dir / f"{input_fasta.stem}_mafft_error.log"
+            with open(error_log, "w") as log_file:
+                log_file.write(f"MAFFT alignment failed for {input_fasta}:\n")
+                log_file.write(e.stderr)
+        
+        raise AlignmentError(
+            f"MAFFT alignment failed for {input_fasta}. Error log saved at: {error_log if log_dir else 'Not logged'}"
+        )
+
 
 def align_group(group_name: str, sequences: List[str], temp_dir: Path, log_dir: Path) -> AlignmentResult:
-    """Align a single group of sequences, switching to Super5 if necessary"""
+    """Align a single group of sequences, switching to Super5 if normal alignment fails, and to MAFFT if Super5 fails."""
     input_fasta = temp_dir / f"{group_name}_input.fasta"
     output_fasta = temp_dir / f"{group_name}_aligned.fasta"
     
@@ -78,14 +102,15 @@ def align_group(group_name: str, sequences: List[str], temp_dir: Path, log_dir: 
     try:
         # Try aligning with the normal MUSCLE method
         run_muscle(input_fasta, output_fasta, log_dir=log_dir)
-    except AlignmentError as e:
-        if "HMM overflow" in str(e):
-            logger.warning(f"Switching to Super5 method for {group_name} due to long sequence lengths.")
+    except AlignmentError:
+        tqdm.write(f"Normal MUSCLE alignment failed for {group_name}. Retrying with Super5 mode.")
+        try:
             # Retry with Super5 method
             run_muscle(input_fasta, output_fasta, use_super5=True, log_dir=log_dir)
-        else:
-            # Raise other errors
-            raise e
+        except AlignmentError:
+            tqdm.write(f"Super5 MUSCLE alignment also failed for {group_name}. Switching to MAFFT.")
+            # Use MAFFT as fallback if Super5 also fails
+            run_mafft(input_fasta, output_fasta, log_dir=log_dir)
     
     # Parse results
     aligned_sequences = {}
@@ -107,6 +132,8 @@ def align_group(group_name: str, sequences: List[str], temp_dir: Path, log_dir: 
         group_id=group_name,
         sequences=aligned_sequences
     )
+
+
 
 
 def run_alignments(config, fasta_file: str) -> List[AlignmentResult]:
@@ -134,10 +161,11 @@ def run_alignments(config, fasta_file: str) -> List[AlignmentResult]:
                 result = future.result()
                 results.append(result)
             except Exception as e:
-                tqdm.write(f"Alignment failed for {group_name}: {str(e)}")
+                tqdm.write(f"Alignment failed for {group_name}: {str(e)}")  # Use tqdm.write for error messages
             finally:
                 # Update progress bar
                 pbar.update(1)
                 
     return results
+
 

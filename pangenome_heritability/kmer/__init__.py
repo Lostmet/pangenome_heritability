@@ -1,21 +1,21 @@
 """K-mer window generation and comparison functionality."""
 
 from .window_generator import (
-    compare_windows,
+    kmer_window,
     process_sequences,
+    compare_windows,
     process_fasta_files,
-    save_kmer_results_to_csv,
-    kmer_window
+    save_kmer_results_to_csv
 )
 from .comparison import (
-    process_comparison_matrix
+    process_comparison_results,
 )
 
 __all__ = [
     'kmer_window',
     'process_sequences',
     'compare_windows',
-    'process_comparison_matrix',
     'process_fasta_files',
-    'save_kmer_results_to_csv'
+    'save_kmer_results_to_csv',
+    'process_comparison_results'
 ]

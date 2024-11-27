@@ -6,13 +6,16 @@ from .variant_processing.vcf_parser import process_variants
 from .variant_processing.fasta_generator import generate_fasta_sequences
 from .alignment.muscle_wrapper import run_alignments
 from .kmer.window_generator import process_fasta_files, save_kmer_results_to_csv
+from .kmer.comparison import process_comparison_results
 from .genotype.plink_converter import convert_to_plink
+from .utils.logging_utils import get_logger
 
+logger = get_logger(__name__)
 @click.group()
 def cli():
     """A Python tool for pangenome heritability analysis."""
     pass
-#variant overlap and group
+#Step1: variant overlap and group
 @cli.command("process-vcf")
 @click.option('--vcf', required=True, help='Input VCF file')
 @click.option('--ref', required=True, help='Reference FASTA file')
@@ -42,7 +45,7 @@ def process_vcf(vcf: str, ref: str, out: str):
         click.echo(f"Error in process-vcf: {str(e)}", err=True)
         raise click.Abort()
 
-# Run alignments
+#Step2: Run alignments
 @cli.command("run-alignments")
 @click.option('--grouped-variants', required=True, help='Grouped variants file')
 @click.option('--ref', required=True, help='Reference FASTA file')
@@ -66,26 +69,35 @@ def run_alignments_cmd(grouped_variants: str, ref: str, out: str, threads: int):
         raise click.Abort()
 
 # Step 3: Process K-mer windows
-@click.command("process-kmers")
-@click.option('--alignments', required=True, help='Input alignments directory')
-@click.option('--window-size', default=4, help='K-mer window size')
-@click.option('--out', required=True, help='Output directory for K-mer results')
-def process_kmers(alignments: str, window_size: int, out: str):
+@cli.command("process-kmers")
+@click.option('--alignments', required=True, type=click.Path(exists=True, file_okay=False, dir_okay=True), help='Input alignments directory containing FASTA files')
+@click.option('--window-size', default=4, type=int, help='K-mer window size (default: 4)')
+@click.option('--out', required=True, type=click.Path(file_okay=False, dir_okay=True), help='Output directory for K-mer results')
+@click.option('--threads', type=int, default=None, help='Maximum number of worker processes (default: CPU count - 1)')
+def process_kmers(alignments: str, window_size: int, out: str, threads: int):
     """Process K-mer windows based on alignments."""
     try:
         if not os.path.exists(alignments):
             raise FileNotFoundError(f"Alignments directory not found: {alignments}")
 
+        intermediate_csv = os.path.join(out, "comparison_results.csv")
+        final_csv = os.path.join(out, "processed_comparison_results.csv")
+
+        
         logger.info(f"Processing alignments from {alignments} with window size {window_size}")
-        results = process_fasta_files(alignments, window_size)
+        results = process_fasta_files(alignments, k=window_size, max_workers=threads)
+        save_kmer_results_to_csv(results, intermediate_csv)
 
-        output_file = os.path.join(out, "kmer_results.csv")
-        save_kmer_results_to_csv(results, output_file)
+        
+        process_comparison_results(intermediate_csv, final_csv)
 
-        click.echo(f"K-mers processed. Results saved to {output_file}")
+        logger.info(f"Final processed results saved to {final_csv}")
+        click.echo(f"K-mer processing complete. Final results saved to {final_csv}")
+
     except Exception as e:
-        click.echo(f"Error in process-kmers: {str(e)}", err=True)
+        logger.error(f"Error in process-kmers: {str(e)}")
         raise click.Abort()
+
 
 
 

@@ -3,20 +3,25 @@ import pandas as pd
 import numpy as np
 import os
 
-from .window_generator import KmerWindow
+from ..utils.logging_utils import get_logger
 
-def process_comparison_matrix(comparisons: pd.DataFrame) -> pd.DataFrame:
-    """Process comparison results into a matrix and remove redundant columns"""
-    # Pivot to create comparison matrix
-    matrix = comparisons.pivot(index=['chromosome_group', 'sequence_id'],
-                             columns='position',
-                             values='comparison')
-    
-    # Remove redundant columns
-    unique_patterns = matrix.T.drop_duplicates()
-    matrix = matrix[unique_patterns.index]
-    
-    # Reset index and format results
-    matrix = matrix.reset_index()
-    matrix['comparison'] = matrix.iloc[:, 2:].values.tolist()
-    return matrix[['chromosome_group', 'sequence_id', 'comparison']]
+logger = get_logger(__name__)
+
+from .window_generator import kmer_window
+
+def process_comparison_results(input_file: str, output_file: str):
+    """Post-process comparison results for empty sequences."""
+    try:
+        df = pd.read_csv(input_file)
+
+        
+        mask = df['chromosome_group'].str.contains('_input.fasta', na=False)
+        df.loc[mask, 'chromosome_group'] = df.loc[mask, 'chromosome_group'].str.replace('_input.fasta', '', regex=False)
+        df.loc[mask, 'matches_ref'] = 0  
+
+        
+        df.to_csv(output_file, index=False)
+        logger.info(f"Processed comparison results saved to {output_file}")
+    except Exception as e:
+        logger.error(f"Error processing comparison results: {str(e)}")
+        raise
