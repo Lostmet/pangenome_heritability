@@ -5,7 +5,7 @@ from .config import Config
 from .variant_processing.vcf_parser import process_variants
 from .variant_processing.fasta_generator import generate_fasta_sequences
 from .alignment.muscle_wrapper import run_alignments
-from .kmer.window_generator import process_fasta_files, save_kmer_results_to_csv
+from .kmer.window_generator import process_fasta_files,  process_chromosome_groups, process_and_merge_results, read_fasta_files
 from .kmer.comparison import process_comparison_results
 from .genotype.plink_converter import convert_to_plink
 from .utils.logging_utils import get_logger
@@ -70,35 +70,47 @@ def run_alignments_cmd(grouped_variants: str, ref: str, out: str, threads: int):
 
 # Step 3: Process K-mer windows
 @cli.command("process-kmers")
-@click.option('--alignments', required=True, type=click.Path(exists=True, file_okay=False, dir_okay=True), help='Input alignments directory containing FASTA files')
+@click.option('--alignments', required=True, type=click.Path(exists=True, file_okay=False, dir_okay=True),
+              help='Input alignments directory containing FASTA files')
 @click.option('--window-size', default=4, type=int, help='K-mer window size (default: 4)')
-@click.option('--out', required=True, type=click.Path(file_okay=False, dir_okay=True), help='Output directory for K-mer results')
+@click.option('--out', required=True, type=click.Path(file_okay=False, dir_okay=True),
+              help='Output directory for final results')
 @click.option('--threads', type=int, default=None, help='Maximum number of worker processes (default: CPU count - 1)')
 def process_kmers(alignments: str, window_size: int, out: str, threads: int):
-    """Process K-mer windows based on alignments."""
+    """
+    Process K-mer windows based on alignments, including:
+    1. Processing alignments into K-mer comparison results.
+    2. Removing redundancy and handling invalid data.
+    3. Merging results and removing collinearity.
+    """
     try:
-        if not os.path.exists(alignments):
-            raise FileNotFoundError(f"Alignments directory not found: {alignments}")
+        # Ensure output directory exists
+        os.makedirs(out, exist_ok=True)
 
-        intermediate_csv = os.path.join(out, "comparison_results.csv")
-        final_csv = os.path.join(out, "processed_comparison_results.csv")
+        # Define paths for intermediate and final output files
+        intermediate_parquet = os.path.join(out, "comparison_results.parquet")
+        processed_parquet = os.path.join(out, "processed_comparison_results.parquet")
+        final_parquet = os.path.join(out, "output_final_results.parquet")
 
-        
-        logger.info(f"Processing alignments from {alignments} with window size {window_size}")
-        results = process_fasta_files(alignments, k=window_size, max_workers=threads)
-        save_kmer_results_to_csv(results, intermediate_csv)
+        # Step 1: Process alignments into K-mer comparison results
+        click.echo(f"Step 1: Processing FASTA files from {alignments} with window size {window_size}")
+        results = process_fasta_files(alignments, k=window_size, max_workers=threads, output_file=intermediate_parquet)
+        click.echo(f"K-mer comparison results saved to {intermediate_parquet}")
 
-        
-        process_comparison_results(intermediate_csv, final_csv)
+        # Step 2: Remove redundancy and handle invalid data
+        click.echo("Step 2: Processing chromosome groups and removing redundancy")
+        process_comparison_results(intermediate_parquet, processed_parquet)
+        click.echo(f"Processed group results saved to {processed_parquet}")
 
-        logger.info(f"Final processed results saved to {final_csv}")
-        click.echo(f"K-mer processing complete. Final results saved to {final_csv}")
+        # Step 3: Merge results and remove collinearity
+        click.echo("Step 3: Merging results and removing collinearity")
+        process_and_merge_results(processed_parquet, final_parquet)
+        click.echo(f"Final merged results saved to {final_parquet}")
 
+        click.echo("K-mer processing complete!")
     except Exception as e:
-        logger.error(f"Error in process-kmers: {str(e)}")
+        click.echo(f"Error in process-kmers: {str(e)}", err=True)
         raise click.Abort()
-
-
 
 
 

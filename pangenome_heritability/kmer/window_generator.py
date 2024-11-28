@@ -13,7 +13,7 @@ from ..utils.logging_utils import get_logger
 logger = get_logger(__name__)
 
 def read_fasta_files(directory: str) -> Dict[str, List[Tuple[str, str]]]:
-    """Read aligned FASTA files and handle missing/empty files by checking input.fasta."""
+    """Read aligned FASTA files and handle missing/empty files."""
     pattern = os.path.join(directory, 'Group_*_*_aligned.fasta')
     file_paths = glob.glob(pattern)
     file_paths.sort()
@@ -23,8 +23,8 @@ def read_fasta_files(directory: str) -> Dict[str, List[Tuple[str, str]]]:
     
     for file_path in file_paths:
         try:
+            sequences = []
             with open(file_path, 'r') as file:
-                sequences = []
                 current_seq = []
                 seq_id = ''
                 
@@ -41,38 +41,16 @@ def read_fasta_files(directory: str) -> Dict[str, List[Tuple[str, str]]]:
                 if seq_id and current_seq:
                     sequences.append((seq_id, ''.join(current_seq)))
             
-            if sequences:
-                fasta_contents[os.path.basename(file_path)] = sequences
+            # blank file
+            if not sequences:
+                logger.warning(f"Empty aligned file detected: {file_path}")
+                fasta_contents[os.path.basename(file_path)] = [('seq0', ''), ('seq1', '')]
             else:
-                input_file_path = file_path.replace('_aligned.fasta', '_input.fasta')
-                if os.path.exists(input_file_path):
-                    logger.info(f"Using input.fasta for empty aligned file: {file_path}")
-                    with open(input_file_path, 'r') as input_file:
-                        sequences = []
-                        current_seq = []
-                        seq_id = ''
-                        
-                        for line in input_file:
-                            line = line.strip()
-                            if line.startswith('>'):
-                                if seq_id and current_seq:
-                                    sequences.append((seq_id, ''.join(current_seq)))
-                                seq_id = line[1:]
-                                current_seq = []
-                            else:
-                                current_seq.append(line)
-                        
-                        if seq_id and current_seq:
-                            sequences.append((seq_id, ''.join(current_seq)))
-                        
-                        if sequences:
-                            fasta_contents[os.path.basename(input_file_path)] = sequences
-                else:
-                    logger.warning(f"No valid sequences found for: {file_path}")
+                fasta_contents[os.path.basename(file_path)] = sequences
         
         except Exception as e:
             logger.error(f"Error processing file {file_path}: {str(e)}")
-            
+    
     return fasta_contents
 
 def process_sequences(file_name: str, sequences: List[Tuple[str, str]], k: int = 4) -> Dict:
@@ -126,7 +104,7 @@ def process_fasta_files(
     """Process FASTA files and generate comparison results."""
     try:
         if max_workers is None:
-            max_workers = max(1, os.cpu_count() - 1)
+            max_workers = 10
         
         logger.info(f"Starting FASTA processing with {max_workers} workers")
         fasta_contents = read_fasta_files(directory)
@@ -163,16 +141,6 @@ def process_fasta_files(
         logger.error(f"Error in process_fasta_files: {str(e)}")
         raise
 
-# Rest of the helper functions remain the same
-def kmer_window(sequence: str, k: int = 4) -> List[str]:
-    """Generate k-mer windows from a sequence."""
-    return [sequence[i:i + k] for i in range(len(sequence) - k + 1)]
-
-def compare_windows(ref_windows: List[str], var_windows: List[str]) -> List[int]:
-    """Compare windows between reference and variant sequences."""
-    return [1 if any(ref_window == var_window for ref_window in ref_windows) else 0 
-            for var_window in var_windows]
-
 def retain_changed_columns_group(rows: List[List[int]]) -> List[List[int]]:
     """Retain only columns where changes occur between consecutive positions."""
     if not rows:
@@ -189,6 +157,19 @@ def retain_changed_columns_group(rows: List[List[int]]) -> List[List[int]]:
     
     return retained
 
+
+# Rest of the helper functions remain the same
+def kmer_window(sequence: str, k: int = 4) -> List[str]:
+    """Generate k-mer windows from a sequence."""
+    return [sequence[i:i + k] for i in range(len(sequence) - k + 1)]
+
+def compare_windows(ref_windows: List[str], var_windows: List[str]) -> List[int]:
+    """Compare windows between reference and variant sequences."""
+    return [1 if any(ref_window == var_window for ref_window in ref_windows) else 0 
+            for var_window in var_windows]
+
+
+
 def process_and_merge_results(input_file: str, output_file: str) -> None:
     """Process comparison results and merge similar patterns."""
     try:
@@ -201,13 +182,19 @@ def process_and_merge_results(input_file: str, output_file: str) -> None:
             matrix = np.array(comparisons.tolist())
             
             if len(group_data) == 1:
-                if matrix.tolist() == [[0]]:
-                    processed_data.append(group_data.iloc[0])
-                else:
-                    new_row = group_data.iloc[0].copy()
-                    new_row['comparison'] = str(matrix[0].tolist())
-                    processed_data.append(new_row)
-                continue
+            
+                non_zero_columns = np.any(matrix != 0, axis=0)
+                matrix = matrix[:, non_zero_columns]
+    
+            
+            if matrix.size == 0 or matrix.tolist() == [[0]]:
+                processed_data.append(group_data.iloc[0])
+            else:
+                new_row = group_data.iloc[0].copy()
+                new_row['comparison'] = str(matrix[0].tolist())
+                processed_data.append(new_row)
+            continue
+
             
             num_variants = matrix.shape[0]
             unique_columns = np.eye(num_variants, dtype=int)
@@ -229,6 +216,42 @@ def process_and_merge_results(input_file: str, output_file: str) -> None:
     except Exception as e:
         logger.error(f"Error processing results: {str(e)}")
         raise
+
+def process_chromosome_groups(input_csv: str, output_csv: str) -> None:
+    """Process CSV results and retain changed columns for each chromosome group."""
+    data = defaultdict(list)
+    
+    # Read CSV file
+    with open(input_csv, newline='', encoding='utf-8') as csvfile:
+        reader = pd.read_csv(csvfile)
+        
+        for _, row in reader.iterrows():
+            chromosome_group = row['chromosome_group']
+            data[chromosome_group].append({
+                'sequence_id': row['sequence_id'],
+                'comparison': eval(row['comparison'])  # Convert string to list
+            })
+    
+    processed_data = []
+    
+    # Process each chromosome group
+    for group, rows in data.items():
+        comparisons = [row['comparison'] for row in rows]
+        retained_comparisons = retain_changed_columns_group(comparisons)
+        
+        for i, row in enumerate(rows):
+            processed_data.append({
+                'chromosome_group': group,
+                'sequence_id': row['sequence_id'],
+                'comparison': retained_comparisons[i]
+            })
+    
+    # Write processed data to output CSV
+    processed_df = pd.DataFrame(processed_data)
+    processed_df['comparison'] = processed_df['comparison'].apply(str)  # Save as string
+    processed_df.to_csv(output_csv, index=False, encoding='utf-8')
+    logger.info(f"Processed results saved to: {output_csv}")
+
 
 def save_kmer_results_to_csv(results: Dict, output_file: str) -> None:
     """Save kmer comparison results to a CSV file.
