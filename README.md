@@ -116,10 +116,12 @@ Options:
 # Generate PLINK files
 panherit convert-to-plink \
     --kmer-results kmers_directory \
+    --grouped-variants output_directory/variants.fasta \ 
     --out plink_files
 ```
 Options:
 - `--kmer-results`: Directory containing k-mer analysis results
+- `--grouped-variants`: FASTA file from previous step
 - `--out`: Output directory for PLINK files
 
 ## Output Files
@@ -222,6 +224,7 @@ panherit process-vcf --vcf input.vcf --ref ref.fa --out output || {
 - Python 3.8+
 - MUSCLE 5
 - MAFFT V7.526
+- PLINK 1.9/2.0
 - External dependencies:
   - pandas
   - numpy

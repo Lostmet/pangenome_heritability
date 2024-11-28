@@ -141,21 +141,6 @@ def process_fasta_files(
         logger.error(f"Error in process_fasta_files: {str(e)}")
         raise
 
-def retain_changed_columns_group(rows: List[List[int]]) -> List[List[int]]:
-    """Retain only columns where changes occur between consecutive positions."""
-    if not rows:
-        return []
-    
-    num_rows = len(rows)
-    num_cols = len(rows[0])
-    retained = [[row[0]] for row in rows]
-    
-    for col in range(1, num_cols):
-        if any(rows[row][col] != rows[row][col - 1] for row in range(num_rows)):
-            for row in range(num_rows):
-                retained[row].append(rows[row][col])
-    
-    return retained
 
 
 # Rest of the helper functions remain the same
@@ -163,11 +148,50 @@ def kmer_window(sequence: str, k: int = 4) -> List[str]:
     """Generate k-mer windows from a sequence."""
     return [sequence[i:i + k] for i in range(len(sequence) - k + 1)]
 
-def compare_windows(ref_windows: List[str], var_windows: List[str]) -> List[int]:
-    """Compare windows between reference and variant sequences."""
-    return [1 if any(ref_window == var_window for ref_window in ref_windows) else 0 
-            for var_window in var_windows]
+def compare_windows(ref_windows, var_windows):
+    """
+    Compare k-mers at corresponding positions in ref_windows and var_windows.
+    Only matching at the same positions is considered valid.
+    """
+    
+    if len(ref_windows) != len(var_windows):
+        raise ValueError("Reference and variant windows must have the same length.")
+    
+    
+    return [0 if ref == var else 1 for ref, var in zip(ref_windows, var_windows)]
 
+
+
+def retain_changed_columns_group(rows):
+    """
+    Accepts a 2D list where each row represents a data row. The function checks for changes across all rows in each column.
+    :param rows: List of lists, each inner list represents a row of data.
+    :return: A processed 2D list that retains columns where any changes occurred across rows.
+    """
+    if not rows:
+        return []
+
+    num_rows = len(rows)
+    num_cols = len(rows[0])
+
+    # Initialize the result list, keep the first column as is
+    retained = [[row[0]] for row in rows]
+
+    # Compare each column starting from the second one
+    for col in range(1, num_cols):
+        retain = False
+        # Check each row to see if the current column differs from the previous column
+        for row in range(num_rows):
+            if rows[row][col] != rows[row][col - 1]:
+                retain = True
+                break
+
+        # If there is a change, retain this column in all rows
+        if retain:
+            for row in range(num_rows):
+                retained[row].append(rows[row][col])
+
+    return retained
 
 
 def process_and_merge_results(input_file: str, output_file: str) -> None:
@@ -176,46 +200,49 @@ def process_and_merge_results(input_file: str, output_file: str) -> None:
         logger.info(f"Reading comparison results from: {input_file}")
         df = pd.read_csv(input_file)
         processed_data = []
-        
+
+        # Process each chromosome group
         for group_name, group_data in df.groupby('chromosome_group'):
             comparisons = group_data['comparison'].apply(lambda x: eval(x) if isinstance(x, str) else x)
             matrix = np.array(comparisons.tolist())
-            
+            if matrix.size == 0:
+                continue
+            # If there's only one row, directly set comparison to [1]
             if len(group_data) == 1:
-            
+                new_row = group_data.iloc[0].copy()
+                new_row['comparison'] = "[1]"  # Directly set comparison to "[1]"
+                processed_data.append(new_row)
+            else:
+
+
+                num_variants = matrix.shape[0]
+                unique_columns = np.eye(num_variants, dtype=int)
+                matrix = np.hstack((matrix, unique_columns))
+
+                # Remove all-zero columns
                 non_zero_columns = np.any(matrix != 0, axis=0)
                 matrix = matrix[:, non_zero_columns]
-    
-            
-            if matrix.size == 0 or matrix.tolist() == [[0]]:
-                processed_data.append(group_data.iloc[0])
-            else:
-                new_row = group_data.iloc[0].copy()
-                new_row['comparison'] = str(matrix[0].tolist())
-                processed_data.append(new_row)
-            continue
 
-            
-            num_variants = matrix.shape[0]
-            unique_columns = np.eye(num_variants, dtype=int)
-            matrix = np.hstack((matrix, unique_columns))
-            
-            matrix = np.unique(matrix, axis=1)
-            non_zero_columns = np.any(matrix != 0, axis=0)
-            matrix = matrix[:, non_zero_columns]
-            
-            for i, row in enumerate(matrix):
-                new_row = group_data.iloc[i].copy()
-                new_row['comparison'] = str(row.tolist())
-                processed_data.append(new_row)
-        
+                # Remove duplicate columns
+                matrix = np.unique(matrix, axis=1)
+                
+                # Process each row of the matrix and update the corresponding row in the group
+                for i, row in enumerate(matrix):
+                    new_row = group_data.iloc[i].copy()
+                    new_row['comparison'] = str(row.tolist())  # Store the processed comparison
+                    processed_data.append(new_row)
+
+        # Convert processed data to DataFrame
         processed_df = pd.DataFrame(processed_data)
+
+        # Write the processed data to the output CSV file
         processed_df.to_csv(output_file, index=False)
         logger.info(f"Processed results saved to: {output_file}")
-    
+
     except Exception as e:
         logger.error(f"Error processing results: {str(e)}")
         raise
+
 
 def process_chromosome_groups(input_csv: str, output_csv: str) -> None:
     """Process CSV results and retain changed columns for each chromosome group."""
