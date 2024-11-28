@@ -112,30 +112,28 @@ def process_kmers(alignments: str, window_size: int, out: str, threads: int):
         raise click.Abort()
 
 
-
 # Step 4: Convert to PLINK
 @cli.command("convert-to-plink")
 @click.option('--csv-file', required=True, help='Path to the processed comparison CSV file.')
 @click.option('--fasta-file', required=True, help='Path to the FASTA file containing variants.')
 @click.option('--output-dir', required=True, help='Output directory for PLINK files.')
 def convert_to_plink_cmd(csv_file: str, fasta_file: str, output_dir: str):
-    """CLI 命令: 替换变异名并生成 PLINK 文件"""
+    """CLI command: Replace variant names and generate PLINK files."""
     try:
-        # 配置 Config 对象
+        # Configure the Config object
         config = Config(
             output_dir=output_dir,
             grouped_variants_file=csv_file,
             ref_fasta=fasta_file
         )
 
-        # 执行主流程
+        # Execute main process
         convert_to_plink_with_variants(config)
         click.echo(f"PLINK files successfully generated in {output_dir}")
 
     except Exception as e:
         click.echo(f"Error in convert-to-plink: {str(e)}", err=True)
         raise click.Abort()
-
 
 if __name__ == "__main__":
     cli()
