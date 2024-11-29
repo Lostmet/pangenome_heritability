@@ -114,17 +114,19 @@ def process_kmers(alignments: str, window_size: int, out: str, threads: int):
 
 # Step 4: Convert to PLINK
 @cli.command("convert-to-plink")
-@click.option('--csv-file', required=True, help='Path to the processed comparison CSV file.')
+@click.option('--csv-file', required=True, help='Path to the final comparison CSV file.')
 @click.option('--grouped-variants', required=True, help='Path to the FASTA file containing grouped variants.')
+@click.option('--vcf-file', required=True, help='Path to the VCF file.')
 @click.option('--output-dir', required=True, help='Output directory for PLINK files.')
-def convert_to_plink_cmd(csv_file: str, fasta_file: str, output_dir: str):
+def convert_to_plink_cmd(csv_file: str, grouped_variants: str, vcf_file: str, output_dir: str):
     """CLI command: Replace variant names and generate PLINK files."""
     try:
-        # Configure the Config object
+        # Correct the parameter mapping
         config = Config(
             output_dir=output_dir,
-            grouped_variants_file=csv_file,
-            ref_fasta=fasta_file
+            grouped_variants_file=csv_file,       # Should be the CSV file
+            ref_fasta=grouped_variants,           # Should be the FASTA file
+            vcf_file=vcf_file                     # Provide the VCF file
         )
 
         # Execute main process
@@ -135,5 +137,3 @@ def convert_to_plink_cmd(csv_file: str, fasta_file: str, output_dir: str):
         click.echo(f"Error in convert-to-plink: {str(e)}", err=True)
         raise click.Abort()
 
-if __name__ == "__main__":
-    cli()

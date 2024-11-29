@@ -224,7 +224,7 @@ panherit process-vcf --vcf input.vcf --ref ref.fa --out output || {
 - Python 3.8+
 - MUSCLE 5
 - MAFFT V7.526
-- PLINK 1.9/2.0
+- PLINK 1.90
 - External dependencies:
   - pandas
   - numpy
