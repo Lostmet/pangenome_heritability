@@ -4,7 +4,7 @@ import pandas as pd
 import re
 import subprocess
 from typing import Dict, NamedTuple
-from config import Config  # Ensure this module contains the Config class
+from ..config import Config  # Ensure this module contains the Config class
 
 class PlinkFiles(NamedTuple):
     bed: str

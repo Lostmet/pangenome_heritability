@@ -7,7 +7,7 @@ from .variant_processing.fasta_generator import generate_fasta_sequences
 from .alignment.muscle_wrapper import run_alignments
 from .kmer.window_generator import process_fasta_files, save_kmer_results_to_csv, process_chromosome_groups, process_and_merge_results, read_fasta_files
 from .kmer.comparison import process_comparison_results
-from .genotype.plink_converter import convert_to_plink
+from .genotype.genotype_mapper import convert_to_plink_with_variants
 from .utils.logging_utils import get_logger
 
 logger = get_logger(__name__)
@@ -115,7 +115,7 @@ def process_kmers(alignments: str, window_size: int, out: str, threads: int):
 # Step 4: Convert to PLINK
 @cli.command("convert-to-plink")
 @click.option('--csv-file', required=True, help='Path to the processed comparison CSV file.')
-@click.option('--fasta-file', required=True, help='Path to the FASTA file containing variants.')
+@click.option('--grouped-variants', required=True, help='Path to the FASTA file containing grouped variants.')
 @click.option('--output-dir', required=True, help='Output directory for PLINK files.')
 def convert_to_plink_cmd(csv_file: str, fasta_file: str, output_dir: str):
     """CLI command: Replace variant names and generate PLINK files."""
