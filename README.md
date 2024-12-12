@@ -32,7 +32,7 @@ conda install conda-forge::mafft
 
 # Install panherit
 git clone https://github.com/PeixiongYuan/pangenome_heritability.git
-cd pangenome-heritability
+cd pangenome_heritability
 conda install -c conda-forge pandas numpy biopython click tqdm
 pip install -e .
 ```
