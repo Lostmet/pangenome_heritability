@@ -1,3 +1,6 @@
+test data could be found: https://drive.google.com/drive/folders/18Pg9b-JsRamHCoVoXAGImM-1JdbewVdc?usp=sharing
+
+
 panherit process-vcf --vcf /storage/yangjianLab/yuanpeixiong/SV_project/pangenome_heritability/tests/test_data/test.vcf.gz \
                      --ref /storage/yangjianLab/yuanpeixiong/SV_project/pangenome_heritability/tests/test_data/SL5.0.fasta \
                      --out /storage/yangjianLab/yuanpeixiong/pangenome_heritability/test
