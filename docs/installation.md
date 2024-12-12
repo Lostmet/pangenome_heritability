@@ -11,8 +11,8 @@ A tool for processing pangenome structural variants and generating PLINK format 
 ### Step 1: Install MUSCLE
 ```bash
 # Linux
-wget https://drive5.com/muscle5/muscle5.1.linux_intel64
-chmod +x muscle5.1.linux_intel64
+wget https://github.com/rcedgar/muscle/releases/download/v5.3/muscle-linux-x86.v5.3
+chmod +x muscle-linux-x86.v5.
 # Add your local bin to PATH
 # Add these lines to your ~/.bashrc (for bash) or ~/.zshrc (for zsh)
 echo 'export PATH="$HOME/local/bin:$PATH"' >> ~/.bashrc
