@@ -31,7 +31,7 @@ source ~/.bashrc
 conda install conda-forge::mafft
 
 # Install panherit
-git clone https://github.com/yuanpeixiong/pangenome_heritability.git
+git clone https://github.com/PeixiongYuan/pangenome_heritability.git
 cd pangenome-heritability
 conda install -c conda-forge pandas numpy biopython click tqdm
 pip install -e .
