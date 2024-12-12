@@ -23,7 +23,7 @@ conda activate panherit
 mkdir ~/local/bin
 wget https://github.com/rcedgar/muscle/releases/download/v5.3/muscle-linux-x86.v5.3
 chmod +x muscle-linux-x86.v5.3
-mv muscle-linux-x86.v5.3 ~/local/bin/muscle5
+mv muscle-linux-x86.v5.3 ~/local/bin/muscle
 echo 'export PATH="$HOME/local/bin:$PATH"' >> ~/.bashrc
 source ~/.bashrc
 
