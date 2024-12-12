@@ -19,42 +19,24 @@ A Python tool for processing pangenome structural variants and generating PLINK 
 conda create -n panherit python=3.8
 conda activate panherit
 
-
-# OR Install MUSCLE (Option 2: without sudo)
-mkdir -p ~/local/bin
-mv muscle5.1.linux_intel64 ~/local/bin/muscle5
+# Install MUSCLE
+mkdir ~/local/bin
+wget https://github.com/rcedgar/muscle/releases/download/v5.3/muscle-linux-x86.v5.3
+chmod +x muscle-linux-x86.v5.3
+mv muscle-linux-x86.v5.3 ~/local/bin/muscle5
 echo 'export PATH="$HOME/local/bin:$PATH"' >> ~/.bashrc
 source ~/.bashrc
 
-# Install package
-git clone https://github.com/yourusername/pangenome-heritability.git
+# Install MAFFT
+conda install conda-forge::mafft
+
+# Install panherit
+git clone https://github.com/yuanpeixiong/pangenome-heritability.git
 cd pangenome-heritability
 conda install -c conda-forge pandas numpy biopython click tqdm
 pip install -e .
 ```
-## Installation Options
 
-### Using Mamba (Faster Alternative)
-```bash
-# Install mamba
-conda install -c conda-forge mamba
-
-# Create environment
-mamba create -n panherit python=3.8
-mamba activate panherit
-
-# Install dependencies
-mamba install -c conda-forge pandas numpy biopython click tqdm
-```
-
-### Using environment.yml
-```bash
-# Create environment from file
-mamba env create -f environment.yml
-conda activate panherit
-```
-
-For detailed installation instructions, see [Installation Guide](docs/installation.md).
 
 # Usage Guide
 
