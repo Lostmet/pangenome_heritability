@@ -117,7 +117,7 @@ def process_fasta_files(
                 for file_name, sequences in fasta_contents.items()
             }
             
-            for future in tqdm(as_completed(futures), total=len(futures), desc="Processing files"):
+            for future in tqdm(as_completed(futures), total=len(futures), desc="Processing files",bar_format="{desc}: {n_fmt}/{total_fmt} groups"):
                 result = future.result()
                 if result['error']:
                     errors.append(f"Error in {result['file_name']}: {result['error']}")

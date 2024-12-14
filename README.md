@@ -55,9 +55,26 @@ The tool provides four main commands:
 - `run-alignments`: Perform sequence alignments using MUSCLE
 - `process-kmers`: Generate and analyze k-mer windows
 - `convert-to-plink`: Convert results to PLINK format
+- `run-all`: Run the entire workflow in one command
+
+
+## Quickly Usage
+```bash
+panherit run-all \
+    --vcf input.vcf \
+    --ref reference.fasta \
+    --out output_directory \
+    --window-size 4 \
+    --threads 4
+```
+Options:
+- `--vcf`: Input VCF file containing structural variants
+- `--ref`: Reference genome FASTA file
+- `--out`: Output directory for processed variants and FASTA files
+- `--window-size`: Size of k-mer windows (default: 4)
+- `--threads`: Number of parallel threads (default: 1)
 
 ## Detailed Usage
-
 ### Step 1: Process VCF File
 ```bash
 # Process VCF and generate FASTA sequences
