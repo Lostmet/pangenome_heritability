@@ -1,28 +1,23 @@
-test data could be found: https://drive.google.com/drive/folders/18Pg9b-JsRamHCoVoXAGImM-1JdbewVdc?usp=sharing
 
-
-panherit process-vcf --vcf /storage/yangjianLab/yuanpeixiong/SV_project/pangenome_heritability/tests/test_data/test.vcf.gz \
-                     --ref /storage/yangjianLab/yuanpeixiong/SV_project/pangenome_heritability/tests/test_data/SL5.0.fasta \
-                     --out /storage/yangjianLab/yuanpeixiong/pangenome_heritability/test
+panherit process-vcf \
+    --vcf path/to/pangenome_heritability/test/test.vcf.gz \
+    --ref path/to/pangenome_heritability/test/test.fasta \
+    --out path/to/pangenome_heritability/test
 
 panherit run-alignments \
-    --grouped-variants /storage/yangjianLab/yuanpeixiong/pangenome_heritability/test/variants.fasta \
-    --ref /storage/yangjianLab/yuanpeixiong/SV_project/pangenome_heritability/tests/test_data/SL5.0.fasta \
-    --out /storage/yangjianLab/yuanpeixiong/SV_project/sv_heritiability/test_data/alignment \
-    --threads 20
-
-panherit process-kmers \
-    --alignments /storage/yangjianLab/yuanpeixiong/SV_project/sv_heritiability/test_data/alignment/test_alignments \
-    --window-size 4 \
-    --out /storage/yangjianLab/yuanpeixiong/pangenome_heritability/test/kmers_directory \
+    --grouped-variants path/to/pangenome_heritability/test/variants.fasta \
+    --ref path/to/pangenome_heritability/test/test.fasta \
+    --out path/to/pangenome_heritability/test/alignment \
     --threads 1
 
-
-cp -r /storage/yangjianLab/yuanpeixiong/SV_project/sv_heritiability/test_data/alignment/temp_alignments/* /data/alignment/
-
+panherit process-kmers \
+    --alignments path/to/pangenome_heritability/test/alignment/alignment_results \
+    --window-size 4 \
+    --out path/to/pangenome_heritability/test/kmers_directory \
+    --threads 1
 
 panherit convert-to-plink \
-    --csv-file /storage/yangjianLab/yuanpeixiong/pangenome_heritability/test/kmers_directory/output_final_results.csv \
-    --grouped-variants /storage/yangjianLab/yuanpeixiong/pangenome_heritability/test/variants.fasta \
-    --vcf-file /storage/yangjianLab/yuanpeixiong/SV_project/pangenome_heritability/tests/test_data/test.vcf.gz \
-    --output-dir /storage/yangjianLab/yuanpeixiong/pangenome_heritability/test 
+    --csv-file path/to/pangenome_heritability/test/kmers_directory/output_final_results.csv \
+    --grouped-variants path/to/pangenome_heritability/test/variants.fasta \
+    --vcf-file path/to/pangenome_heritability/test/test.vcf.gz \
+    --output-dir path/to/pangenome_heritability/test/ 

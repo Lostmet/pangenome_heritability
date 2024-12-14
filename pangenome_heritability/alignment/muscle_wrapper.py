@@ -51,7 +51,6 @@ def run_muscle(input_fasta: Path, output_fasta: Path, use_super5: bool = False, 
             check=True
         )
     except subprocess.CalledProcessError as e:
-        
         if log_dir:
             log_dir.mkdir(parents=True, exist_ok=True)
             error_log = log_dir / f"{input_fasta.stem}_error.log"
@@ -103,12 +102,20 @@ def align_group(group_name: str, sequences: List[str], temp_dir: Path, log_dir: 
         # Try aligning with the normal MUSCLE method
         run_muscle(input_fasta, output_fasta, log_dir=log_dir)
     except AlignmentError:
-        tqdm.write(f"Normal MUSCLE alignment failed for {group_name}. Retrying with Super5 mode.")
+        # Log failure without printing
+        if log_dir:
+            log_dir.mkdir(parents=True, exist_ok=True)
+            with open(log_dir / f"{group_name}_error.log", "a") as log_file:
+                log_file.write(f"Normal MUSCLE alignment failed for {group_name}. Retrying with Super5 mode.\n")
+        
         try:
             # Retry with Super5 method
             run_muscle(input_fasta, output_fasta, use_super5=True, log_dir=log_dir)
         except AlignmentError:
-            tqdm.write(f"Super5 MUSCLE alignment also failed for {group_name}. Switching to MAFFT.")
+            # Log second failure without printing
+            if log_dir:
+                with open(log_dir / f"{group_name}_error.log", "a") as log_file:
+                    log_file.write(f"Super5 MUSCLE alignment also failed for {group_name}. Switching to MAFFT.\n")
             # Use MAFFT as fallback if Super5 also fails
             run_mafft(input_fasta, output_fasta, log_dir=log_dir)
     
@@ -134,22 +141,25 @@ def align_group(group_name: str, sequences: List[str], temp_dir: Path, log_dir: 
     )
 
 
-
-
 def run_alignments(config, fasta_file: str) -> List[AlignmentResult]:
     """Run alignments for all groups in the given FASTA file"""
     # Parse FASTA file
     group_sequences = read_fasta(fasta_file)
     
     # Temporary directories for alignments and logs
-    temp_dir = Path(config.output_dir) / "temp_alignments"
-    log_dir = Path(config.output_dir) / "error_logs"
+    temp_dir = Path(config.output_dir) / "alignment_results"
+    log_dir = Path(config.output_dir) / "logs"
     temp_dir.mkdir(parents=True, exist_ok=True)
     log_dir.mkdir(parents=True, exist_ok=True)
     
     results = []
     
-    with ProcessPoolExecutor(max_workers=config.threads) as executor, tqdm(total=len(group_sequences), desc="Running alignments") as pbar:
+    # Customize tqdm format for simpler progress
+    with ProcessPoolExecutor(max_workers=config.threads) as executor, tqdm(
+        total=len(group_sequences),
+        desc="Processed Groups",
+        bar_format="{desc}: {n}/{total} groups"
+    ) as pbar:
         futures = {
             executor.submit(align_group, group_name, sequences, temp_dir, log_dir): group_name
             for group_name, sequences in group_sequences.items()
@@ -161,11 +171,12 @@ def run_alignments(config, fasta_file: str) -> List[AlignmentResult]:
                 result = future.result()
                 results.append(result)
             except Exception as e:
-                tqdm.write(f"Alignment failed for {group_name}: {str(e)}")  # Use tqdm.write for error messages
+                # Log failure without printing
+                if log_dir:
+                    with open(log_dir / f"{group_name}_error.log", "a") as log_file:
+                        log_file.write(f"Alignment failed for {group_name}: {str(e)}\n")
             finally:
                 # Update progress bar
                 pbar.update(1)
                 
     return results
-
-

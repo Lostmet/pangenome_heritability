@@ -137,3 +137,57 @@ def convert_to_plink_cmd(csv_file: str, grouped_variants: str, vcf_file: str, ou
         click.echo(f"Error in convert-to-plink: {str(e)}", err=True)
         raise click.Abort()
 
+# one line
+@cli.command("run-all")
+@click.option('--vcf', required=True, help='Input VCF file')
+@click.option('--ref', required=True, help='Reference FASTA file')
+@click.option('--out', required=True, help='Output directory')
+@click.option('--window-size', default=4, type=int, help='K-mer window size (default: 4)')
+@click.option('--threads', default=1, type=int, help='Number of threads')
+def run_all(vcf: str, ref: str, out: str, window_size: int, threads: int):
+    """Run the complete pipeline."""
+    try:
+        click.echo("Step 1: Processing VCF and generating FASTA...")
+        config = Config(vcf_file=vcf, ref_fasta=ref, output_dir=out)
+        grouped_variants_list = process_variants(config)
+        grouped_variants_dict = {}
+        for group in grouped_variants_list:
+            grouped_variants_dict.setdefault(group.chrom, []).append(group)
+        fasta_path = generate_fasta_sequences(config, grouped_variants_dict)
+        click.echo(f"FASTA file generated: {fasta_path}")
+
+        click.echo("Step 2: Running alignments...")
+        alignments_config = Config(
+            grouped_variants_file=fasta_path,
+            ref_fasta=ref,
+            output_dir=out,
+            threads=threads
+        )
+        run_alignments(alignments_config, fasta_path)
+        click.echo(f"Alignments completed. Results saved in {out}/temp_alignments")
+
+        click.echo("Step 3: Processing K-mers...")
+        alignments_dir = os.path.join(out, "temp_alignments")
+        intermediate_csv = os.path.join(out, "comparison_results.csv")
+        processed_csv = os.path.join(out, "processed_comparison_results.csv")
+        final_csv = os.path.join(out, "output_final_results.csv")
+        results = process_fasta_files(alignments_dir, k=window_size, max_workers=threads)
+        save_kmer_results_to_csv(results, intermediate_csv)
+        process_comparison_results(intermediate_csv, processed_csv)
+        process_and_merge_results(processed_csv, final_csv)
+        click.echo(f"K-mer processing completed. Results saved in {final_csv}")
+
+        click.echo("Step 4: Converting to PLINK format...")
+        plink_config = Config(
+            output_dir=out,
+            grouped_variants_file=final_csv,
+            ref_fasta=fasta_path,
+            vcf_file=vcf
+        )
+        convert_to_plink_with_variants(plink_config)
+        click.echo(f"PLINK files successfully generated in {out}")
+
+        click.echo("All steps completed successfully!")
+    except Exception as e:
+        click.echo(f"Error in run-all: {str(e)}", err=True)
+        raise click.Abort()

@@ -7,7 +7,7 @@ A Python tool for processing pangenome structural variants and generating PLINK 
 - Process VCF files containing structural variants
 - Align variant sequences using MUSCLE
 - K-mer based variant quantification
-- Generate PLINK format files (bed/bim/fam)
+- Generate PLINK format files (ped/map/bfile)
 - Parallel processing support
 - Progress tracking and logging
 
@@ -19,22 +19,28 @@ A Python tool for processing pangenome structural variants and generating PLINK 
 conda create -n panherit python=3.8
 conda activate panherit
 
-# Install MUSCLE
-mkdir ~/local/bin
+# Install panherit
+git clone https://github.com/PeixiongYuan/pangenome_heritability.git
+cd pangenome_heritability
+conda install -c conda-forge pandas numpy biopython click tqdm
+pip install -e .
+
+# Install MUSCLE and PLINK
+mkdir -p ~/local/bin
+cd ~/local/bin
 wget https://github.com/rcedgar/muscle/releases/download/v5.3/muscle-linux-x86.v5.3
+wget https://s3.amazonaws.com/plink1-assets/plink_linux_x86_64_20230116.zip
+unzip plink_linux_x86_64_20230116.zip
 chmod +x muscle-linux-x86.v5.3
-mv muscle-linux-x86.v5.3 ~/local/bin/muscle
+mv muscle-linux-x86.v5.3 muscle
+chmod +x plink
 echo 'export PATH="$HOME/local/bin:$PATH"' >> ~/.bashrc
 source ~/.bashrc
 
 # Install MAFFT
 conda install conda-forge::mafft
 
-# Install panherit
-git clone https://github.com/PeixiongYuan/pangenome_heritability.git
-cd pangenome_heritability
-conda install -c conda-forge pandas numpy biopython click tqdm
-pip install -e .
+
 ```
 
 
