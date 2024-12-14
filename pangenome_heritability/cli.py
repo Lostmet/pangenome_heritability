@@ -167,7 +167,7 @@ def run_all(vcf: str, ref: str, out: str, window_size: int, threads: int):
         click.echo(f"Alignments completed. Results saved in {out}/temp_alignments")
 
         click.echo("Step 3: Processing K-mers...")
-        alignments_dir = os.path.join(out, "temp_alignments")
+        alignments_dir = os.path.join(out, "alignment_results")
         intermediate_csv = os.path.join(out, "comparison_results.csv")
         processed_csv = os.path.join(out, "processed_comparison_results.csv")
         final_csv = os.path.join(out, "output_final_results.csv")

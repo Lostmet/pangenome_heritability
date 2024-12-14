@@ -1,4 +1,3 @@
-
 panherit process-vcf \
     --vcf path/to/pangenome_heritability/test/test.vcf.gz \
     --ref path/to/pangenome_heritability/test/test.fasta \
@@ -21,3 +20,12 @@ panherit convert-to-plink \
     --grouped-variants path/to/pangenome_heritability/test/variants.fasta \
     --vcf-file path/to/pangenome_heritability/test/test.vcf.gz \
     --output-dir path/to/pangenome_heritability/test/ 
+
+
+
+panherit run-all \
+    --vcf /storage/yangjianLab/yuanpeixiong/test/pangenome_heritability/test/test.vcf.gz \
+    --ref /storage/yangjianLab/yuanpeixiong/test/pangenome_heritability/test/test.fasta \
+    --out /storage/yangjianLab/yuanpeixiong/test/pangenome_heritability/test/ \
+    --window-size 4 \
+    --threads 1
