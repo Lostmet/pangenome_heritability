@@ -1,5 +1,6 @@
 import click
-import os
+import shutil
+import sys
 
 from .config import Config
 from .variant_processing.vcf_parser import process_variants
@@ -9,6 +10,18 @@ from .kmer.window_generator import process_fasta_files, save_kmer_results_to_csv
 from .kmer.comparison import process_comparison_results
 from .genotype.genotype_mapper import convert_to_plink_with_variants
 from .utils.logging_utils import get_logger
+
+def check_tools(*tools):
+    """
+    Check if required tools are available in the user's PATH.
+    Raise an error if any tool is missing.
+    """
+    missing_tools = [tool for tool in tools if shutil.which(tool) is None]
+    if missing_tools:
+        raise RuntimeError(
+            f"The following tools are missing from your environment: {', '.join(missing_tools)}. "
+            f"Please ensure they are installed and accessible from your PATH."
+        )
 
 logger = get_logger(__name__)
 @click.group()
@@ -54,6 +67,8 @@ def process_vcf(vcf: str, ref: str, out: str):
 def run_alignments_cmd(grouped_variants: str, ref: str, out: str, threads: int):
     """Run alignments for grouped variants."""
     try:
+        # check if MUSCLE is available
+        check_tools("muscle")
         
         config = Config(
             grouped_variants_file=grouped_variants,
@@ -64,6 +79,9 @@ def run_alignments_cmd(grouped_variants: str, ref: str, out: str, threads: int):
     
         alignments = run_alignments(config, grouped_variants)
         click.echo(f"Alignments completed. Output saved to {out}")
+    except RuntimeError as e:
+        click.echo(f"Error: {str(e)}", err=True)
+        raise click.Abort()
     except Exception as e:
         click.echo(f"Error in run-alignments: {str(e)}", err=True)
         raise click.Abort()
@@ -147,6 +165,7 @@ def convert_to_plink_cmd(csv_file: str, grouped_variants: str, vcf_file: str, ou
 def run_all(vcf: str, ref: str, out: str, window_size: int, threads: int):
     """Run the complete pipeline."""
     try:
+        check_tools("muscle", "plink")
         click.echo("Step 1: Processing VCF and generating FASTA...")
         config = Config(vcf_file=vcf, ref_fasta=ref, output_dir=out)
         grouped_variants_list = process_variants(config)
@@ -164,7 +183,7 @@ def run_all(vcf: str, ref: str, out: str, window_size: int, threads: int):
             threads=threads
         )
         run_alignments(alignments_config, fasta_path)
-        click.echo(f"Alignments completed. Results saved in {out}/temp_alignments")
+        click.echo(f"Alignments completed. Results saved in alignment_results directory")
 
         click.echo("Step 3: Processing K-mers...")
         alignments_dir = os.path.join(out, "alignment_results")
@@ -188,6 +207,9 @@ def run_all(vcf: str, ref: str, out: str, window_size: int, threads: int):
         click.echo(f"PLINK files successfully generated in {out}")
 
         click.echo("All steps completed successfully!")
+    except RuntimeError as e:
+        click.echo(f"Error: {str(e)}", err=True)
+        raise click.Abort()
     except Exception as e:
         click.echo(f"Error in run-all: {str(e)}", err=True)
         raise click.Abort()
