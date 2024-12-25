@@ -1,7 +1,7 @@
 import click
 import shutil
 import sys
-
+import os
 from .config import Config
 from .variant_processing.vcf_parser import process_variants
 from .variant_processing.fasta_generator import generate_fasta_sequences
