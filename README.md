@@ -57,6 +57,26 @@ The tool provides four main commands:
 - `convert-to-plink`: Convert results to PLINK format
 - `run-all`: Run the entire workflow in one command
 
+## Note
+
+Important: The VCF and reference FASTA files must use numeric chromosome identifiers (e.g., 1, 2, 3 for chromosomes) without additional prefixes or suffixes. Ensure your files adhere to this convention to avoid processing errors.
+
+Example of a VCF File Header:
+
+```##fileformat=VCFv4.2
+##source=YourTool
+#CHROM  POS     ID      REF     ALT     QUAL    FILTER  INFO
+1       12345   rs123   A       T       50      PASS    .
+2       67890   rs456   G       C       99      PASS    .
+```
+Example of a FASTA File:
+```
+>1
+AGCTAGCTAGCTAGCTAGCTAGCTAGCTAGCTAGCTAGCTAGCTAGCTAG
+>2
+TGCATGCATGCATGCATGCATGCATGCATGCATGCATGCATGCATGCATG
+```
+
 
 ## Quickly Usage
 ```bash
