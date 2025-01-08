@@ -22,8 +22,7 @@ conda activate panherit
 # Install panherit
 git clone https://github.com/PeixiongYuan/pangenome_heritability.git
 cd pangenome_heritability
-conda install -c conda-forge pandas numpy biopython click tqdm
-pip install -e .
+pip install .
 
 # Install MUSCLE and PLINK
 mkdir -p ~/local/bin
