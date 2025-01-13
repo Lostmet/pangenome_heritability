@@ -54,23 +54,23 @@ def replace_seq_with_variants(csv_data: pd.DataFrame, variants: Dict[str, list])
     return csv_data
 
 def process_comparison_column(csv_data: pd.DataFrame) -> pd.DataFrame:
-    """Process the 'comparison' column to extract genotype information."""
-    print("Columns before processing 'comparison':", csv_data.columns.tolist())
+    """Process diff_array column to extract genotype information"""
+    print("Columns before processing 'diff_array':", csv_data.columns.tolist())
     
-    if 'comparison' not in csv_data.columns:
-        print("Warning: 'comparison' column is missing or empty.")
+    if 'diff_array' not in csv_data.columns:
+        print("Warning: 'diff_array' column is missing or empty.")
         return csv_data
 
-    def process_comparison(s):
+    def process_diff_array(s):
         try:
             cleaned_s = re.sub(r',\s*$', '', s)
             return eval(cleaned_s)
         except Exception as e:
-            print(f"Error processing comparison data: {s}. Error: {e}")
+            print(f"Error processing diff_array data: {s}. Error: {e}")
             return None
 
-    csv_data['comparison'] = csv_data['comparison'].apply(process_comparison)
-    csv_data = csv_data[csv_data['comparison'].notnull()]
+    csv_data['diff_array'] = csv_data['diff_array'].apply(process_diff_array)
+    csv_data = csv_data[csv_data['diff_array'].notnull()]
     return csv_data
 
 def extract_group_from_chromosome_group(csv_data: pd.DataFrame) -> pd.DataFrame:
@@ -98,19 +98,20 @@ def add_start_column_if_missing(csv_data: pd.DataFrame) -> pd.DataFrame:
 
 def create_ped_and_map_files(csv_data: pd.DataFrame, vcf_file: str, output_prefix: str):
     """Generate PED and MAP files from CSV and VCF data."""
+    
     vcf = pysam.VariantFile(vcf_file)
     samples = list(vcf.header.samples)
     
-    # Extract variant data from VCF
+    
     variant_data = {}
     for record in vcf:
-        chromosome = str(record.contig)  # Convert chromosome to string for key consistency
-        start = str(record.pos)          # Convert start to string for key consistency
-        key = (chromosome, start)
+        chromosome = str(record.contig)
+        position = str(record.pos)
+        key = (chromosome, position)
         variant_data[key] = {sample: record.samples[sample]['GT'] for sample in samples}
     vcf.close()
 
-    # Combine genotype function
+    
     def combine_genotypes(existing, new):
         def combine_gt(gt1, gt2):
             if None in gt1 or -1 in gt1:
@@ -118,70 +119,180 @@ def create_ped_and_map_files(csv_data: pd.DataFrame, vcf_file: str, output_prefi
             if None in gt2 or -1 in gt2:
                 return gt1
             return tuple(max(a, b) for a, b in zip(gt1, gt2))
-        return {sample: combine_gt(existing.get(sample, (0, 0)), new.get(sample, (0, 0))) for sample in samples}
+        return {sample: combine_gt(existing.get(sample, (0, 0)), new.get(sample, (0, 0))) 
+                for sample in samples}
 
-    # Initialize PED and MAP data
+    
     ped_data = {sample: [sample, sample, '0', '0', '0', '-9'] for sample in samples}
     map_data = []
 
-    # Group by chromosome and group
-    groups = csv_data.groupby(['chromosome', 'group'])
+    
+    for _, row in csv_data.iterrows():
+        try:
+            
+            chromosome = row['chromosome_group'].split('_')[1]
+            group = row['chromosome_group'].split('_')[-1]
+            
+            
+            meta_array = eval(row['meta_array'])
+            diff_array = eval(row['diff_array'])
+            
+            
+            for i, (meta, diff) in enumerate(zip(meta_array, diff_array)):
+                pos = str(meta['pos'])
+                ref = meta['ref']
+                alt = meta['alt']
+                
+                
+                vcf_key = (str(chromosome), pos)
+                if vcf_key not in variant_data:
+                    continue
 
-    # Process each group
-    for (chromosome, group), group_data in groups:
-       
-        comparison_matrix = group_data['comparison'].tolist()
-        if not comparison_matrix:
-            print(f"Warning: Empty comparison matrix for group {group}.")
+                
+                variant_count = diff_array.count(1)
+                variant_type = "SV" if variant_count == 1 else "RSV"
+                
+                
+                variant_id = f"{variant_type}_chr{chromosome}_grp{group}_pos{pos}_{ref}_{alt}"
+                
+               
+                map_row = [chromosome, variant_id, '0', pos]
+                map_data.append(map_row)
+                
+                
+                for sample in samples:
+                    gt = variant_data[vcf_key].get(sample, (0, 0))
+                   
+                    if None in gt or -1 in gt:
+                        genotype_str = '0 0'
+                    else:
+                        genotype_str = ' '.join(map(str, [gt[0] + 1, gt[1] + 1]))
+                    ped_data[sample].append(genotype_str)
+                    
+        except Exception as e:
+            print(f"Error processing row: {str(e)}")
             continue
 
-        num_kmers = len(comparison_matrix[0]) if comparison_matrix else 0
+    
+    with open(f"{output_prefix}.ped", 'w') as f:
+        for sample, data in ped_data.items():
+            f.write('\t'.join(map(str, data)) + '\n')
 
-        for idx in range(num_kmers):
-            merged_genotypes = {sample: (None, None) for sample in samples}
-
-            # Merge genotype data
-            for row_idx, comparison in enumerate(comparison_matrix):
-                value = comparison[idx]
-
-                if value == 1:
-                    key = (str(group_data.iloc[row_idx]['chromosome']), str(group_data.iloc[row_idx]['start']))
-                    if key in variant_data:
-                        sample_genotypes = variant_data[key]
-                        merged_genotypes = combine_genotypes(merged_genotypes, sample_genotypes)
-                    else:
-                        print(f"Warning: Key {key} not found in variant_data.")
-
-            # If the current kmer has exactly one match in the comparison matrix, skip adding this variant
-            if [comparison[idx] for comparison in comparison_matrix].count(1) == 1:
-
-                continue  # Skip this variant, don't add it to the MAP or PED data
-
-            # Format genotype data
-            for sample in samples:
-                def format_genotype(gt):
-                    if None in gt or -1 in gt:
-                        return '0 0'
-                    return ' '.join(map(str, [gt[0] + 1, gt[1] + 1]))
-                genotype_str = format_genotype(merged_genotypes[sample])
-                ped_data[sample].append(genotype_str)
-
-            # Append to MAP data
-            map_row = [chromosome, f"chr{chromosome}_grp{group}_idx{idx}", 0, group_data.iloc[0]['start']]
-            map_data.append(map_row)
-
-    # Write PED file
-    ped_output_path = f"{output_prefix}.ped"
-    with open(ped_output_path, 'w') as ped_file:
-        for row in ped_data.values():
-            ped_file.write('\t'.join(map(str, row)) + '\n')
-
-    # Write MAP file
-    map_output_path = f"{output_prefix}.map"
-    with open(map_output_path, 'w') as map_file:
+    
+    with open(f"{output_prefix}.map", 'w') as f:
         for row in map_data:
-            map_file.write('\t'.join(map(str, row)) + '\n')
+            f.write('\t'.join(map(str, row)) + '\n')
 
+def create_vcf_file(csv_data: pd.DataFrame, vcf_file: str, grouped_variants: str, output_prefix: str):
+    """Generate new VCF file based on CSV data and original VCF"""
+    import pysam
+    
+    # Open VCF file and get sample information
+    vcf = pysam.VariantFile(vcf_file)
+    samples = list(vcf.header.samples)
+    
+    # Create output files for SV and rSV
+    output_files = {
+        'SV': f"{output_prefix}.sv.vcf",
+        'rSV': f"{output_prefix}.rsv.vcf"
+    }
+    
+    # Extract variant data from VCF
+    variant_data = {}
+    print("Reading VCF file...")
+    for record in vcf:
+        chromosome = str(record.contig)
+        position = int(record.pos)
+        key = (chromosome, position)
+        variant_data[key] = record
+    vcf.close()
+    
+    # Create files for each variant type and write headers
+    for variant_type, output_vcf in output_files.items():
+        with open(output_vcf, 'w') as f:
+            f.write('##fileformat=VCFv4.2\n')
+            f.write('##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">\n')
+            f.write('#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\t' + '\t'.join(samples) + '\n')
+    
+    # Process data by group
+    for group_name, group_data in csv_data.groupby('chromosome_group'):
+        try:
+            #print(f"Processing group: {group_name}")
+            
+            # Get meta_array and diff_array
+            if 'meta_array' not in group_data.columns or 'diff_array' not in group_data.columns:
+                #print(f"Group {group_name} missing required columns")
+                continue
+                
+            meta_array = eval(group_data.iloc[0]['meta_array'])
+            diff_array_matrix = [eval(row['diff_array']) for _, row in group_data.iterrows()]
+            
+            # Get variant information
+            variants_info = get_variants_info(grouped_variants, group_name)
+            if not variants_info:
+                continue
+            
+            # Process variants for each column
+            for col_idx in range(len(meta_array)):
+                # Get diff values for this column across all rows
+                col_diffs = [diff[col_idx] if col_idx < len(diff) else 0 for diff in diff_array_matrix]
+                variant_count = sum(col_diffs)
+                
+                # Determine variant type based on variant_count
+                variant_type = 'SV' if variant_count == 1 else 'rSV'
+                output_vcf = output_files[variant_type]
+                
+                # Get variant information
+                meta = meta_array[col_idx]
+                ref = meta['ref']
+                alt = meta['alt']
+                
+                # Get variants marked as 1
+                variant_indices = [i for i, diff in enumerate(col_diffs) if diff == 1]
+                if not variant_indices:
+                    continue
+                
+                # Use first variant position as representative
+                chrom, pos = variants_info[variant_indices[0]]
+                key = (str(chrom), int(pos))
+                if key not in variant_data:
+                    continue
+                
+                record = variant_data[key]
+                
+                # Format genotype data, replace None with "."
+                formatted_genotypes = []
+                for sample in samples:
+                    if sample in record.samples:
+                        gt = record.samples[sample]['GT']
+                        if gt is None:
+                            formatted_genotypes.append('./.')
+                        else:
+                            formatted_genotypes.append('/'.join(map(str, [x if x is not None else '.' for x in gt])))
+                    else:
+                        formatted_genotypes.append('./.')
+                
+                # Write VCF line
+                with open(output_vcf, 'a') as f:
+                    vcf_line = [
+                        chrom,
+                        str(pos),
+                        f"{variant_type}_chr{chrom}_grp{group_name}_pos{pos}",
+                        ref,
+                        alt,
+                        '.',
+                        'PASS',
+                        f"TYPE={variant_type};GROUP={group_name}",
+                        'GT'
+                    ] + formatted_genotypes
+                    
+                    f.write('\t'.join(map(str, vcf_line)) + '\n')
+                
+        except Exception as e:
+            print(f"Error processing group {group_name}: {str(e)}")
+            continue
+
+    print("VCF file generation complete")
 
 def convert_to_plink_with_variants(config: Config):
     """Main function: replaces variant names and generates PLINK files."""
@@ -237,3 +348,55 @@ def convert_to_plink_with_variants(config: Config):
     ], check=True)
 
     print(f"PLINK files saved in {config.output_dir}")
+
+def parse_variant_id(variant_id):
+    """Parse variant information from sequence ID in variants.fasta
+    Example: Variant_2_2_50381_50381 -> (2, 50381)
+    """
+    parts = variant_id.split('_')
+    if len(parts) >= 5 and parts[0] == 'Variant':
+        chromosome = parts[1]
+        pos = int(parts[3])
+        return chromosome, pos
+    return None, None
+
+def get_variants_info(fasta_file, group_name):
+    """Get variant information for specified group from variants.fasta
+    Example:
+    >Group_2_1
+    ACGT...
+    >Variant_2_1_50381_50381
+    ACGT...
+    >Variant_2_1_50382_50382
+    ACGT...
+    """
+    variants = []
+    group_found = False
+    
+    #print(f"Reading variant information for {group_name} from {fasta_file}")
+    with open(fasta_file) as f:
+        for line in f:
+            if line.startswith('>'):
+                header = line.strip()[1:]
+                #print(f"Reading header: {header}")
+                
+                if header == group_name:
+                    group_found = True
+                    #print(f"Found target group: {group_name}")
+                    continue
+                
+                if group_found:
+                    if header.startswith('Group_'):
+                        #print(f"Encountered next group, ending current group processing")
+                        break
+                    elif header.startswith('Variant_'):
+                        # Parse variant ID, example: Variant_2_1_50381_50381
+                        parts = header.split('_')
+                        if len(parts) >= 5:
+                            chrom = parts[1]
+                            pos = int(parts[3])
+                            variants.append((chrom, pos))
+                            #print(f"Added variant: chr{chrom}:{pos}")
+    
+    #print(f"Found {len(variants)} variants for group {group_name}")
+    return variants
