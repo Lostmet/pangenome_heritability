@@ -1,13 +1,13 @@
 # Pangenome Heritability Tool
 
-A Python tool for processing pangenome structural variants and generating PLINK format files. This tool helps analyze structural variants in pangenomes by performing sequence alignment, k-mer window analysis, and converting results to PLINK format.
+A Python tool for processing pangenome structural variants and generating PLINK format files. This tool helps analyze structural variants in pangenomes by performing sequence alignment, k-mer window analysis, and converting results to VCF format.
 
 ## Features
 
 - Process VCF files containing structural variants
 - Align variant sequences using MUSCLE
 - K-mer based variant quantification
-- Generate PLINK format files (ped/map/bfile)
+- Generate VCF format files (ped/map/bfile)
 - Parallel processing support
 - Progress tracking and logging
 
@@ -24,15 +24,15 @@ git clone https://github.com/PeixiongYuan/pangenome_heritability.git
 cd pangenome_heritability
 pip install .
 
-# Install MUSCLE and PLINK
+# Install MUSCLE
 mkdir -p ~/local/bin
 cd ~/local/bin
 wget https://github.com/rcedgar/muscle/releases/download/v5.3/muscle-linux-x86.v5.3
-wget https://s3.amazonaws.com/plink1-assets/plink_linux_x86_64_20230116.zip
-unzip plink_linux_x86_64_20230116.zip
+
+
 chmod +x muscle-linux-x86.v5.3
 mv muscle-linux-x86.v5.3 muscle
-chmod +x plink
+
 echo 'export PATH="$HOME/local/bin:$PATH"' >> ~/.bashrc
 source ~/.bashrc
 
@@ -53,7 +53,7 @@ The tool provides four main commands:
 - `process-vcf`: Process VCF file and group overlapping variants
 - `run-alignments`: Perform sequence alignments using MUSCLE
 - `process-kmers`: Generate and analyze k-mer windows
-- `convert-to-plink`: Convert results to PLINK format
+- `convert-to-vcf`: Convert results to VCF format
 - `run-all`: Run the entire workflow in one command
 
 ## Note
@@ -127,26 +127,30 @@ Options:
 # Process k-mer windows
 panherit process-kmers \
     --alignments temp_alignments \
+    --grouped-variants output_directory/variants.fasta \
     --window-size 4 \
     --out kmers_directory
 ```
 Options:
 - `--alignments`: Directory containing alignment results
+- `--grouped-variants`: FASTA file from previous step
 - `--window-size`: Size of k-mer windows (default: 4)
 - `--out`: Output directory for k-mer results
 
-### Step 4: Convert to PLINK
+### Step 4: Convert to VCF
 ```bash
-# Generate PLINK files
-panherit convert-to-plink \
-    --kmer-results kmers_directory \
+# Generate VCF files
+panherit convert-to-vcf \
+    --csv-file kmers_directory/output_final_results.csv \
+    --vcf-file kmers_directory/test.vcf.gz \
     --grouped-variants output_directory/variants.fasta \ 
-    --out plink_files
+    --out vcf_files
 ```
 Options:
-- `--kmer-results`: Directory containing k-mer analysis results
+- `--csv-file`: CSV file from previous step
+- `--vcf-file`: VCF file from previous step
 - `--grouped-variants`: FASTA file from previous step
-- `--out`: Output directory for PLINK files
+- `--out`: Output directory for VCF files
 
 ## Output Files
 
@@ -177,41 +181,11 @@ kmers_directory/
 └── comparison.log    # Processing log file
 ```
 
-### PLINK Files
+### VCF Files
 ```
-plink_files/
-├── variants.bed      # Binary genotype file
-├── variants.bim      # Variant information file
-└── variants.fam      # Sample information file
-```
-
-## Example Pipeline
-
-Complete pipeline example:
-```bash
-# 1. Process VCF
-panherit process-vcf \
-    --vcf input.vcf \
-    --ref reference.fasta \
-    --out step1_output
-
-# 2. Run alignments
-panherit run-alignments \
-    --grouped-variants step1_output/variants.fasta \
-    --ref reference.fasta \
-    --out step2_output \
-    --threads 4
-
-# 3. Process k-mers
-panherit process-kmers \
-    --alignments step2_output \
-    --window-size 4 \
-    --out step3_output
-
-# 4. Generate PLINK files
-panherit convert-to-plink \
-    --kmer-results step3_output \
-    --out final_output
+vcfiles/
+├── pangenome.rsv.vcf
+└──  pangenome.sv.vcf.gz
 ```
 
 ## Notes
@@ -248,7 +222,6 @@ panherit process-vcf --vcf input.vcf --ref ref.fa --out output || {
 - Python 3.8+
 - MUSCLE 5
 - MAFFT V7.526
-- PLINK 1.90
 - External dependencies:
   - pandas
   - numpy
