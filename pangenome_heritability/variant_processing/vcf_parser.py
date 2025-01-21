@@ -33,17 +33,45 @@ class VariantGroup:
         return (variant.start <= self.end and 
                 variant.end >= self.start)
 
+def parse_chrom(chrom: str) -> int:
+    """
+    Convert the chromosome string to an integer that reflects a more natural
+    ordering (e.g., 1 < 2 < ... < 10 < X < Y, etc.). Modify this as needed
+    for your naming conventions.
+    """
+    # Remove common prefix like 'chr' if present
+    if chrom.startswith("chr"):
+        chrom = chrom[3:]
+    
+    # Special handling for X, Y, M (mitochondrial)
+    if chrom.upper() == "X":
+        return 23
+    elif chrom.upper() == "Y":
+        return 24
+    elif chrom.upper() in ["M", "MT"]:
+        return 25
+    
+    # Try converting to integer, fallback if there's an error
+    try:
+        return int(chrom)
+    except ValueError:
+        return 999999
+
 def process_variants(config) -> List[VariantGroup]:
-    """Process VCF file and group overlapping variants"""
+    """
+    Process a VCF file, sorting all variants by chromosome order 
+    (using parse_chrom) and by their start coordinate, and then grouping 
+    overlapping variants into VariantGroup objects.
+    """
     try:
         vcf = pysam.VariantFile(config.vcf_file)
     except Exception as e:
         raise InputError(f"Failed to open VCF file: {str(e)}")
         
-    variant_groups = []
-    current_group = None
+    all_variants = []
     
-    with tqdm(desc="Processing variants") as pbar:
+    logger.info("Reading variants from VCF...")
+    with tqdm(desc="Reading variants") as pbar:
         try:
             for record in vcf.fetch():
                 variant = Variant(
@@ -54,27 +82,43 @@ def process_variants(config) -> List[VariantGroup]:
                     alt=list(record.alts),
                     samples={s: record.samples[s]['GT'] for s in record.samples}
                 )
-                
-                if current_group is None:
-                    current_group = VariantGroup(variant.chrom)
-                    current_group.add_variant(variant)
-                elif (current_group.chrom != variant.chrom or 
-                      not current_group.overlaps(variant)):
+                all_variants.append(variant)
+                pbar.update(1)
+        except Exception as e:
+            raise InputError(f"Error reading VCF file: {str(e)}")
+        finally:
+            vcf.close()
+            
+    logger.info("Sorting variants by chromosome (natural order) and start position...")
+    # Sort by parsed chromosome value, then by start coordinate
+    all_variants.sort(key=lambda v: (parse_chrom(v.chrom), v.start))
+    
+    logger.info("Grouping sorted variants...")
+    variant_groups = []
+    current_group = None
+    
+    with tqdm(desc="Grouping variants", total=len(all_variants)) as pbar:
+        for variant in all_variants:
+            if current_group is None:
+                # First variant
+                current_group = VariantGroup(variant.chrom)
+                current_group.add_variant(variant)
+            else:
+                # If chromosome is different or they do not overlap, start a new group
+                if (current_group.chrom != variant.chrom or 
+                    not current_group.overlaps(variant)):
                     variant_groups.append(current_group)
                     current_group = VariantGroup(variant.chrom)
                     current_group.add_variant(variant)
                 else:
+                    # Still in the same group
                     current_group.add_variant(variant)
-                    
-                pbar.update(1)
-                
-            if current_group is not None:
-                variant_groups.append(current_group)
-                
-        except Exception as e:
-            raise InputError(f"Error processing VCF file: {str(e)}")
-        finally:
-            vcf.close()
             
+            pbar.update(1)
+        
+        # Add the last group if it exists
+        if current_group is not None:
+            variant_groups.append(current_group)
+    
     logger.info(f"Processed {len(variant_groups)} variant groups")
     return variant_groups
