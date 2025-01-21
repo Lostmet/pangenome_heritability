@@ -36,8 +36,7 @@ class VariantGroup:
 def parse_chrom(chrom: str) -> int:
     """
     Convert the chromosome string to an integer that reflects a more natural
-    ordering (e.g., 1 < 2 < ... < 10 < X < Y, etc.). Modify this as needed
-    for your naming conventions.
+    ordering (e.g., 1 < 2 < ... < 10 < X < Y, etc.). 
     """
     # Remove common prefix like 'chr' if present
     if chrom.startswith("chr"):
