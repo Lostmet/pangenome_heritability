@@ -506,6 +506,7 @@ def process_and_merge_results(input_csv: str, output_csv: str):
                     continue
                 
                 # Process results, removing '-' characters
+                
                 for i, seq_id in enumerate(sequence_ids):
                     if i < len(retained_diff) and i < len(retained_meta):
                         # Process '-' characters in meta_array
@@ -523,7 +524,7 @@ def process_and_merge_results(input_csv: str, output_csv: str):
                             'diff_array': retained_diff[i],
                             'meta_array': processed_meta
                         })
-            
+                
             except Exception as e:
                 logger.error(f"Error processing group {chrom}: {str(e)}")
                 continue
@@ -541,7 +542,6 @@ def process_and_merge_results(input_csv: str, output_csv: str):
         logger.error(f"Error during processing: {str(e)}")
         raise
 
-
 def process_chromosome_groups(input_csv: str, output_csv: str) -> None:
     """
     Process data for each chromosome_group, retaining arrays for all positions.
@@ -558,19 +558,19 @@ def process_chromosome_groups(input_csv: str, output_csv: str) -> None:
             meta_array = eval(row['meta_array']) if isinstance(row['meta_array'], str) else row['meta_array']
             
             # Directly add original data to processed_data
-            processed_data.append({
-                'chromosome_group': chromosome_group,
-                'sequence_id': row['sequence_id'],
-                'diff_array': diff_array,  # Use original diff_array
-                'meta_array': meta_array   # Use original meta_array
-            })
+            #processed_data.append({
+            #    'chromosome_group': chromosome_group,
+            #    'sequence_id': row['sequence_id'],
+            #    'diff_array': diff_array,  # Use original diff_array
+            #    'meta_array': meta_array   # Use original meta_array
+            #})
     
     # Write processed CSV
-    processed_df = pd.DataFrame(processed_data)
+    #processed_df = pd.DataFrame(processed_data)
     # Convert arrays to strings for storage
-    processed_df['diff_array'] = processed_df['diff_array'].apply(str)
-    processed_df['meta_array'] = processed_df['meta_array'].apply(str)
-    processed_df.to_csv(output_csv, index=False, encoding='utf-8')
+    #processed_df['diff_array'] = processed_df['diff_array'].apply(str)
+    #processed_df['meta_array'] = processed_df['meta_array'].apply(str)
+    #processed_df.to_csv(output_csv, index=False, encoding='utf-8')
     logger.info(f"Processed results saved to: {output_csv}")
 
 
