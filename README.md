@@ -51,7 +51,7 @@ The tool provides four main commands: （现在只能用run-all，我还没有�
 
 Important: The VCF and reference FASTA files must use numeric chromosome identifiers (e.g., 1, 2, 3 for chromosomes) without additional prefixes or suffixes. Ensure your files adhere to this convention to avoid processing errors.
 
-Example of a VCF File Header:
+Example of a VCF File Header: （VCF记得解压）
 
 ```##fileformat=VCFv4.2
 ##source=YourTool
@@ -71,7 +71,7 @@ TGCATGCATGCATGCATGCATGCATGCATGCATGCATGCATGCATGCATG
 ## Quickly Usage
 ```bash
 panherit run-all \
-    --vcf test.vcf.gz \
+    --vcf test.vcf \
     --ref test.fasta \
     --out output_directory \
     --window-size 4 \
