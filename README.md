@@ -71,7 +71,7 @@ TGCATGCATGCATGCATGCATGCATGCATGCATGCATGCATGCATGCATG
 ## Quickly Usage
 ```bash
 panherit run-all \
-    --vcf test.vcf \
+    --vcf test.vcf.gz \
     --ref test.fasta \
     --out output_directory \
     --window-size 4 \
