@@ -7,10 +7,11 @@ from .config import Config
 from .variant_processing.vcf_parser import process_variants
 from .variant_processing.fasta_generator import generate_fasta_sequences
 from .alignment.muscle_wrapper import run_alignments
-from .kmer.window_generator import process_fasta_files, save_kmer_results_to_csv, process_chromosome_groups, process_and_merge_results, read_fasta_files , parse_fasta_with_metadata
+from .kmer.window_generator import process_fasta_files, save_kmer_results_to_csv, process_and_merge_results, read_fasta_files , parse_fasta_with_metadata
 from .kmer.comparison import process_comparison_results
-from .genotype.genotype_mapper import convert_to_plink_with_variants, create_ped_and_map_files, create_vcf_file
+from .genotype.genotype_mapper import create_ped_and_map_files, create_vcf_file, process_diff_array, process_vcf_to_x_matrix, compute_t_matrix, save_rsv_meta, extract_vcf_sample, vcf_generate, detect_abnormal
 from .utils.logging_utils import get_logger
+from .variant_processing.vcf_parser import VariantGroup
 
 def check_tools(*tools):
     """
@@ -59,7 +60,6 @@ def process_vcf(vcf: str, ref: str, out: str):
         click.echo(f"Error in process-vcf: {str(e)}", err=True)
         raise click.Abort()
 
-#Step2: Run alignments
 @cli.command("run-alignments")
 @click.option('--grouped-variants', required=True, help='Grouped variants file')
 @click.option('--ref', required=True, help='Reference FASTA file')
@@ -68,17 +68,22 @@ def process_vcf(vcf: str, ref: str, out: str):
 def run_alignments_cmd(grouped_variants: str, ref: str, out: str, threads: int):
     """Run alignments for grouped variants."""
     try:
-        # check if MUSCLE is available
-        check_tools("muscle")
-        
         config = Config(
             grouped_variants_file=grouped_variants,
             ref_fasta=ref,
             output_dir=out,
             threads=threads
         )
-    
-        alignments = run_alignments(config, grouped_variants)
+
+        # ✅ 先调用 generate_fasta_sequences()，正确解包返回的 Tuple
+        fasta_file, has_insertion = generate_fasta_sequences(config, grouped_variants)
+        print(f"DEBUG: fasta_file = {fasta_file}")  # 确保是文件路径字符串
+        print(f"DEBUG: Is fasta_file a string? {isinstance(fasta_file, str)}")
+
+
+        # ✅ 传入两个参数，防止参数不匹配
+        alignments = run_alignments(config, fasta_file, has_insertion)
+
         click.echo(f"Alignments completed. Output saved to {out}")
     except RuntimeError as e:
         click.echo(f"Error: {str(e)}", err=True)
@@ -86,6 +91,7 @@ def run_alignments_cmd(grouped_variants: str, ref: str, out: str, threads: int):
     except Exception as e:
         click.echo(f"Error in run-alignments: {str(e)}", err=True)
         raise click.Abort()
+
 
 @cli.command("process-kmers")
 @click.option('--alignments', required=True, type=click.Path(exists=True, file_okay=False, dir_okay=True), 
@@ -182,24 +188,28 @@ def convert_to_plink_cmd(csv_file: str, vcf_file: str, output_dir: str):
 def run_all(vcf: str, ref: str, out: str, window_size: int, threads: int):
     """Run the complete pipeline."""
     try:
-        check_tools("muscle")
         click.echo("Step 1: Processing VCF and generating FASTA...")
         config = Config(vcf_file=vcf, ref_fasta=ref, output_dir=out)
         grouped_variants_list = process_variants(config)
         grouped_variants_dict = {}
         for group in grouped_variants_list:
             grouped_variants_dict.setdefault(group.chrom, []).append(group)
-        fasta_path = generate_fasta_sequences(config, grouped_variants_dict)
+        
+        # ✅ 解包生成的输出，获取 fasta 文件路径和 has_insertion
+        fasta_path, has_insertion_dict = generate_fasta_sequences(config, grouped_variants_dict)
+
         click.echo(f"FASTA file generated: {fasta_path}")
 
         click.echo("Step 2: Running alignments...")
         alignments_config = Config(
-            grouped_variants_file=fasta_path,
+            grouped_variants_file=fasta_path,  # 只传递路径
             ref_fasta=ref,
             output_dir=out,
             threads=threads
         )
-        run_alignments(alignments_config, fasta_path)
+
+        # ✅ 传递两个参数，路径和has_insertion
+        run_alignments(alignments_config, fasta_path, has_insertion_dict)
         click.echo(f"Alignments completed. Results saved in alignment_results directory")
 
         click.echo("Step 3: Processing K-mers...")
@@ -224,14 +234,30 @@ def run_all(vcf: str, ref: str, out: str, window_size: int, threads: int):
 
         click.echo("Step 4: Converting to VCF format...")
         vcf_prefix = os.path.join(out, "pangenome")
-        csv_data = pd.read_csv(final_csv)
-        create_vcf_file(
-            csv_data=csv_data,
-            vcf_file=vcf,
-            grouped_variants=fasta_path,
-            output_prefix=vcf_prefix
-        )
-        click.echo(f"VCF files generated: {vcf_prefix}.sv.vcf and {vcf_prefix}.rsv.vcf")
+        #csv_data = pd.read_csv(final_csv)
+        # Step 1: 处理 diff_array，生成 D_matrix
+        process_diff_array(final_csv, out)
+        # Step 2: 读取 VCF，生成 X_matrix
+        process_vcf_to_x_matrix(vcf, out)
+        # Step 3: 计算 T_matrix
+        compute_t_matrix(out)
+
+        click.echo("D, X, T matrix generated")
+
+        save_rsv_meta(final_csv, out)#生成rsv_meta，用于查阅ref，alt等信息
+        rsv_meta_csv = os.path.join(out, "rsv_meta.csv")
+        gt_matrix = os.path.join(out, "GT_matrix.csv")
+        output_vcf = os.path.join(out, "output.vcf")
+        rsv_vcf = os.path.join(out, "pangenome_rsv.vcf")
+        extract_vcf_sample(rsv_meta_csv, gt_matrix, out)#生成gt_matrix，用于填充vcf的GT
+        vcf_generate(vcf, rsv_meta_csv, output_vcf, gt_matrix, rsv_vcf)#最终生成rsv.vcf
+
+
+        click.echo("pangenome_rsv.vcf generated!")
+
+        #第五步，检测不合理的GT数据
+        click.echo("Step 5: Detect abnormal GT data...")
+        detect_abnormal(out)
 
         click.echo("All steps completed successfully!")
     except RuntimeError as e:
@@ -240,6 +266,7 @@ def run_all(vcf: str, ref: str, out: str, window_size: int, threads: int):
     except Exception as e:
         click.echo(f"Error in run-all: {str(e)}", err=True)
         raise click.Abort()
+
 
 @cli.command("convert-to-vcf")
 @click.option('--csv-file', required=True, help='Path to CSV file containing final comparison results and metadata')
