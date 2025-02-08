@@ -2,15 +2,6 @@
 
 A Python tool for processing pangenome structural variants and generating PLINK format files. This tool helps analyze structural variants in pangenomes by performing sequence alignment, k-mer window analysis, and converting results to VCF format.
 
-## Features
-
-- Process VCF files containing structural variants
-- Align variant sequences using MUSCLE
-- K-mer based variant quantification
-- Generate VCF format files (ped/map/bfile)
-- Parallel processing support
-- Progress tracking and logging
-
 ## Quick Start
 
 ### Installation with Conda (Recommended)
@@ -24,17 +15,17 @@ git clone https://github.com/PeixiongYuan/pangenome_heritability.git
 cd pangenome_heritability
 pip install .
 
-# Install MUSCLE
-mkdir -p ~/local/bin
-cd ~/local/bin
-wget https://github.com/rcedgar/muscle/releases/download/v5.3/muscle-linux-x86.v5.3
+# Install MUSCLE，这个可以去掉了（标记一下），我先注释掉，希望该死的check_tools不要追我
+# mkdir -p ~/local/bin
+# cd ~/local/bin
+# wget https://github.com/rcedgar/muscle/releases/download/v5.3/muscle-linux-x86.v5.3
 
 
-chmod +x muscle-linux-x86.v5.3
-mv muscle-linux-x86.v5.3 muscle
+# chmod +x muscle-linux-x86.v5.3
+# mv muscle-linux-x86.v5.3 muscle
 
-echo 'export PATH="$HOME/local/bin:$PATH"' >> ~/.bashrc
-source ~/.bashrc
+# echo 'export PATH="$HOME/local/bin:$PATH"' >> ~/.bashrc
+# source ~/.bashrc
 
 # Install MAFFT
 conda install conda-forge::mafft
@@ -49,7 +40,7 @@ The Pangenome Heritability Tool provides several commands to process variants, p
 
 ## Command Overview
 
-The tool provides four main commands:
+The tool provides four main commands: （现在只能用run-all，我还没有分开这些功能）
 - `process-vcf`: Process VCF file and group overlapping variants
 - `run-alignments`: Perform sequence alignments using MUSCLE
 - `process-kmers`: Generate and analyze k-mer windows
@@ -68,7 +59,7 @@ Example of a VCF File Header:
 1       12345   rs123   A       T       50      PASS    .
 2       67890   rs456   G       C       99      PASS    .
 ```
-Example of a FASTA File:
+Example of a FASTA File: （注意FASTA的输入的表头是>1这种类型的，不能是别的，如果是别的的话，需要自己调整）
 ```
 >1
 AGCTAGCTAGCTAGCTAGCTAGCTAGCTAGCTAGCTAGCTAGCTAGCTAG
@@ -80,8 +71,8 @@ TGCATGCATGCATGCATGCATGCATGCATGCATGCATGCATGCATGCATG
 ## Quickly Usage
 ```bash
 panherit run-all \
-    --vcf input.vcf \
-    --ref reference.fasta \
+    --vcf test.vcf \
+    --ref test.fasta \
     --out output_directory \
     --window-size 4 \
     --threads 4
@@ -93,134 +84,10 @@ Options:
 - `--window-size`: Size of k-mer windows (default: 4)
 - `--threads`: Number of parallel threads (default: 1)
 
-## Detailed Usage
-### Step 1: Process VCF File
-```bash
-# Process VCF and generate FASTA sequences
-panherit process-vcf \
-    --vcf input.vcf \
-    --ref reference.fasta \
-    --out output_directory
-```
-Options:
-- `--vcf`: Input VCF file containing structural variants
-- `--ref`: Reference genome FASTA file
-- `--out`: Output directory for processed variants and FASTA files
-
-### Step 2: Run Alignments
-```bash
-# Perform sequence alignments
-panherit run-alignments \
-    --grouped-variants output_directory/variants.fasta \
-    --ref reference.fasta \
-    --out alignments_directory \
-    --threads 4
-```
-Options:
-- `--grouped-variants`: FASTA file from previous step
-- `--ref`: Reference genome FASTA file
-- `--out`: Output directory for alignments
-- `--threads`: Number of parallel threads (default: 1)
-
-### Step 3: Process K-mer Windows
-```bash
-# Process k-mer windows
-panherit process-kmers \
-    --alignments temp_alignments \
-    --grouped-variants output_directory/variants.fasta \
-    --window-size 4 \
-    --out kmers_directory
-```
-Options:
-- `--alignments`: Directory containing alignment results
-- `--grouped-variants`: FASTA file from previous step
-- `--window-size`: Size of k-mer windows (default: 4)
-- `--out`: Output directory for k-mer results
-
-### Step 4: Convert to VCF
-```bash
-# Generate VCF files
-panherit convert-to-vcf \
-    --csv-file kmers_directory/output_final_results.csv \
-    --vcf-file kmers_directory/test.vcf.gz \
-    --grouped-variants output_directory/variants.fasta \ 
-    --out vcf_files
-```
-Options:
-- `--csv-file`: CSV file from previous step
-- `--vcf-file`: VCF file from previous step
-- `--grouped-variants`: FASTA file from previous step
-- `--out`: Output directory for VCF files
-
-## Output Files
-
-Each step produces specific output files:
-
-### Process VCF
-```
-output_directory/
-├── variants.fasta      # Grouped variant sequences
-└── variants.log       # Processing log file
-```
-
-### Alignments
-```
-/path/to/output/
-├── temp_alignments/
-│   ├── Group_2_59_input.fasta
-│   ├── Group_2_59_aligned.fasta
-├── error_logs/
-│   ├── Group_2_59_input_error.log
-
-```
-
-### K-mer Windows
-```
-kmers_directory/
-├── windows.csv       # K-mer window analysis
-└── comparison.log    # Processing log file
-```
-
-### VCF Files
-```
-vcfiles/
-├── pangenome.rsv.vcf
-└──  pangenome.sv.vcf.gz
-```
-
-## Notes
-
-- Each command will create its output directory if it doesn't exist
-- Log files are generated for each step
-- Use `--help` with any command for detailed options
-- For large datasets, adjust thread count based on available resources
-
-## Error Handling
-
-If any step fails, the tool will:
-1. Display an error message
-2. Log the error details
-3. Exit with a non-zero status code
-
-Example error checking:
-```bash
-panherit process-vcf --vcf input.vcf --ref ref.fa --out output || {
-    echo "VCF processing failed"
-    exit 1
-}
-```
-
-
-## Documentation
-
-- [Installation Guide](docs/installation.md)
-- [Usage Guide](docs/usage.md)
-- [API Reference](docs/api.md)
 
 ## Requirements
 
 - Python 3.8+
-- MUSCLE 5
 - MAFFT V7.526
 - External dependencies:
   - pandas
@@ -229,33 +96,25 @@ panherit process-vcf --vcf input.vcf --ref ref.fa --out output || {
   - click
   - tqdm
 
-## Performance Tips
+# 文件夹结构
 
+## 1. 主文件夹
+- **a. Group_?_?_?_D_matrix.csv**: Group_"chrom"_"number"_"pos"，D矩阵，rSV-SV
+- **b. Group_?_?_?_T_matrix.csv**: 对应的T矩阵，rSV-samples
+- **c. Group_?_?_?_X_matrix.csv**: 对应的X矩阵, SV-samples
+- **d. GT_matrix.csv**: T矩阵的合并（rsv.vcf的GT矩阵，格式为1/0类型）
+- **e. ⭐ output_final_results.csv**: 储存rsv正确的ref和alt，同一个rsv会有多个alt（或许是个bug，在windows_size不是1的情况下会出现）
+- **f. output.vcf**: 无GT矩阵的vcf
+- **g. ⭐ pangenome_rsv.vcf**: 最终输出的rsv的vcf文件
+- **h. (processed_) comparison_results.csv**: kmer比对的过程文件
+- **i. rsv_meta.csv**: 填充入vcf文件中的ID，pos，ref，alt的初始文件（目前还不是真正对应的ref和alt）
+- **j. T_matrix_abnormal_all.csv**: rSV-sample矩阵（T矩阵）中异常值占非零正常值的比例
+- **k. T_matrix_abnormal.csv**: 具体group_name下的，每个T矩阵中非零值的数目，异常值的数目和比例
+- **l. variants_extended.fasta**: 按照POS截取并分组的fasta文件汇总（已经过预比对，对insertion存在bug）
 
-1. Adjust thread count based on available CPU cores
-2. Ensure sufficient disk space for temporary files
+## 2. 子文件夹：alignment_results
+- **a. Group_?_?_input.fasta**: Group_"chrom"_"number"，从variants_extended.fasta截取并简化的fasta文件，作为align的输入
+- **b. Group_?_?_aligned.fasta**: 上一个文件经过比对后的结果文件，用于下一步kmer的生成
 
-## Troubleshooting
-
-Common issues and solutions are documented in our [troubleshooting guide](docs/troubleshooting.md).
-
-## Contributing
-
-Contributions are welcome! Please read our [contributing guidelines](CONTRIBUTING.md).
-
-## License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## Citation
-
-If you use this tool in your research, please cite:
-```
-[Citation information to be added]
-```
-
-## Contact
-
-For questions and support:
-- Open an issue on GitHub
-- Email: yuanpeixiong@westlake.edu.cn
+## 3. 子文件夹：logs
+- 错误信息一部分会生成于此
