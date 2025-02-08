@@ -10,8 +10,8 @@ A Python tool for processing pangenome structural variants and generating PLINK 
 conda create -n panherit python=3.8
 conda activate panherit
 
-# Install panherit
-git clone https://github.com/PeixiongYuan/pangenome_heritability.git
+# Install panherit （修改了一下git，git到我的fork上）
+git clone https://github.com/Lostmet/pangenome_heritability.git
 cd pangenome_heritability
 pip install .
 
