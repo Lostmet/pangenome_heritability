@@ -75,14 +75,11 @@ def align_group(group_name: str, sequences: List[str], temp_dir: Path, log_dir: 
     input_fasta = temp_dir / f"{group_name}_input.fasta"
     output_fasta = temp_dir / f"{group_name}_aligned.fasta"
 
-    # Write sequences to FASTA
-    with open(input_fasta, "w") as f:
-        for i, seq in enumerate(sequences):
-            f.write(f">seq{i}\n{seq}\n")
-    
-    
+    # Write sequences to FASTA    
     if has_insertion:
-
+        with open(input_fasta, "w") as f:
+            for i, seq in enumerate(sequences):
+                f.write(f">seq{i}\n{seq}\n")
         # Run MAFFT alignment if there is insertion
         run_mafft(input_fasta, output_fasta, log_dir=log_dir)
 
