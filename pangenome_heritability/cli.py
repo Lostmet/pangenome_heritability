@@ -196,7 +196,7 @@ def run_all(vcf: str, ref: str, out: str, window_size: int, threads: int):
             grouped_variants_dict.setdefault(group.chrom, []).append(group)
         
         # ✅ 解包生成的输出，获取 fasta 文件路径和 has_insertion
-        fasta_path, has_insertion_dict = generate_fasta_sequences(config, grouped_variants_dict)
+        fasta_path, has_insertion_dict, poly_ins_list = generate_fasta_sequences(config, grouped_variants_dict)
 
         click.echo(f"FASTA file generated: {fasta_path}")
 
@@ -209,7 +209,7 @@ def run_all(vcf: str, ref: str, out: str, window_size: int, threads: int):
         )
 
         # ✅ 传递两个参数，路径和has_insertion
-        run_alignments(alignments_config, fasta_path, has_insertion_dict)
+        run_alignments(alignments_config, fasta_path, has_insertion_dict, poly_ins_list)
         click.echo(f"Alignments completed. Results saved in alignment_results directory")
 
         click.echo("Step 3: Processing K-mers...")
