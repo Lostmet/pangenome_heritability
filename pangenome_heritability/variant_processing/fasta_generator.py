@@ -8,6 +8,7 @@ def generate_fasta_sequences(config: Config, variant_groups: Dict[str, List[Vari
     output_fasta = f"{config.output_dir}/variants_extended.fasta"
     ref_genome = pysam.FastaFile(config.ref_fasta)
     has_insertion_dict = {}  # 记录Group是否包含Insertion
+    poly_ins_dict = []
 
     try:
         with open(output_fasta, 'w') as fasta_out:
@@ -29,11 +30,23 @@ def generate_fasta_sequences(config: Config, variant_groups: Dict[str, List[Vari
                     fasta_out.write(f">Group_{chrom}_{i}\n{ref_seq_adjusted}\n")
 
                     for variant in group.variants:
-                        var_seq = adjust_variants_for_insertions(ref_seq, max_insertions, variant, start)
+                        var_seq, poly_ins = adjust_variants_for_insertions(ref_seq, max_insertions, variant, start)
                         var_id = f"Variant_{chrom}_{i}_{variant.start}_{variant.end}"
                         fasta_out.write(f">{var_id}\n{var_seq}\n")
+                        poly_ins_dict.append(poly_ins)#创建一个[{start: end:}{start: end:}]，对每个都有
+                    seen = set()  # 用来记录已经出现过的字典
+                    poly_ins_list = []
+                    for d in poly_ins_dict:
+                        if d:  # 过滤掉空字典
+                            # 将字典转换为 frozenset 后进行去重
+                            dict_frozenset = frozenset(d.items())
+                            if dict_frozenset not in seen:
+                                poly_ins_list.append(d)  # 添加不重复的字典
+                                seen.add(dict_frozenset)  # 记录该字典已出现
 
-        return output_fasta, has_insertion_dict  # 返回Group是否包含Insertion信息
+                    #print(poly_ins_list)                    
+
+        return output_fasta, has_insertion_dict, poly_ins_list  # 返回Group是否包含Insertion信息，还有poly_ins信息
 
     finally:
         ref_genome.close()
@@ -80,8 +93,8 @@ def adjust_variants_for_insertions(ref_seq: str, max_insertions: Dict[int, int],
     ins = 0
     rel_start = variant.start - start
     rel_end = variant.end - start + 1
-    #print(f"rel_start:{rel_start}")
-    
+
+    poly_ins = {} #记录多polyINS
     #处理deletion
     if len(variant.ref) > 1 and len(variant.alt[0]) == 1:
         #ref_list[rel_start - 1] = variant.alt[0] # 防止别人不标准化
@@ -99,8 +112,10 @@ def adjust_variants_for_insertions(ref_seq: str, max_insertions: Dict[int, int],
     #处理insertion 
     elif len(variant.ref) == 1 and len(variant.alt[0]) > 1:
         #ref_list = list(ref_seq)
+        #print(max_insertions)
+        
         for pos, max_ins_length in sorted(max_insertions.items()):
-            if rel_start != pos:
+            if rel_start != pos: #对max_insertion中，如果rel_start不是列表的pos，那就给占位符
                 blank = "-" * (max_ins_length - 1)
                 blank = list(blank)
                 position = 0
@@ -111,19 +126,26 @@ def adjust_variants_for_insertions(ref_seq: str, max_insertions: Dict[int, int],
                 #print(f"位置：{pos + ins}")
                 ins += max_ins_length - 1 ##看看能不能对齐，成了
 
-            else: 
-                #print("到这一步了吗")
-                #print(f"pos:{pos}, variant.alt[0][0]:{variant.alt[0][0]}")
-                #ref_list[pos - 1] = variant.alt[0][0] #防止有傻逼不用标准格式，我防了一下
-                #print(variant.alt[0][0])
+            else: #真正修改的地方，加入了同pos多insertion的成功比对
+                
                 alt = list(variant.alt[0][1:])
+                blank = "-" * (max_ins_length - len(variant.alt[0]))
+                blank = list(blank)
+                #print(blank)
                 position = 0
                 for items in alt:
                     ref_list.insert(pos + ins + position, items)
                     position += 1  # 插入 alt
+                for items in blank:
+                    ref_list.insert(pos + ins + position, items)
+                    position += 1  # 插入 blank
+                
+                if blank != []: #得到同insertion的相对位置
+                    poly_ins["start"] = pos + ins
+                    poly_ins["end"] = pos + ins + position
+
                 ins += max_ins_length - 1 ##看看能不能对齐
-                #print(f"相等，pos:{pos}, rel_start:{rel_start},现在的ins:{ins}")
-            #print(f"pos:{pos}")
+
     # INV处理
     elif "<INV>" in variant.alt:
         ref_list[rel_start -1: rel_end] = reverse_complement(ref_list[rel_start -1: rel_end])
@@ -150,7 +172,7 @@ def adjust_variants_for_insertions(ref_seq: str, max_insertions: Dict[int, int],
             ins += max_ins_length - 1 ##看看能不能对齐，成了       
         
 
-    return "".join(ref_list)      
+    return "".join(ref_list), poly_ins      
          
 #原始代码，不用了
 def generate_variant_sequence(ref_seq: str, variant: Variant, start: int, max_insertions: Dict[int, int], ins_all: int) -> str:
