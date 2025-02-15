@@ -759,7 +759,7 @@ def vcf_generate(input_vcf: str, csv_file: str, output_vcf: str, gt_file: str, o
             # 解析 meta_array 字段
             meta_data = ast.literal_eval(row["meta_array"])
             pos = meta_data["pos"]  # 解析 POS
-            ref = meta_data["ref"]  # 解析 REF
+            ref = meta_data["ref"] if meta_data["ref"] else "_" # 解析 REF，空为"_"
             alt = meta_data["alt"] if meta_data["alt"] else "_"  # 解析 ALT，若为空则设为 "_"
 
             # 组装 VCF 结构
@@ -780,6 +780,7 @@ def vcf_generate(input_vcf: str, csv_file: str, output_vcf: str, gt_file: str, o
             if line.startswith("#CHROM"):
                 header = line.strip()  # 提取正确的列名
                 outfile.write("##fileformat=VCFv4.2\n")  # VCF 版本信息
+                outfile.write('##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">\n')
                 outfile.write(header + "\n")  # 写入正确的表头
                 break  # 找到 #CHROM 就停止
         else:
