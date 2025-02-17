@@ -21,13 +21,13 @@ def generate_fasta_sequences(config: Config, variant_groups: Dict[str, List[Vari
 
                     # 计算Insertion信息
                     max_insertions, has_insertion = get_max_insertions(group.variants, start)
-                    has_insertion_dict[f"Group_{chrom}_{i}"] = has_insertion  # 记录是否包含Insertion
+                    has_insertion_dict[f"Group_{chrom}_{i}_{group.start}"] = has_insertion  # 记录是否包含Insertion
 
                     # 调整参考序列 (更改为了adjusted)
                     ref_seq_adjusted = adjust_reference_for_insertions(ref_seq, max_insertions)
 
                     # 写入参考序列
-                    fasta_out.write(f">Group_{chrom}_{i}\n{ref_seq_adjusted}\n")
+                    fasta_out.write(f">Group_{chrom}_{i}_{group.start}\n{ref_seq_adjusted}\n")
 
                     for variant in group.variants:
                         var_seq, poly_ins = adjust_variants_for_insertions(ref_seq, max_insertions, variant, start)
