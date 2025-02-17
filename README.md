@@ -15,21 +15,8 @@ git clone https://github.com/Lostmet/pangenome_heritability.git
 cd pangenome_heritability
 pip install .
 
-# Install MUSCLE，这个可以去掉了（标记一下），我先注释掉，希望该死的check_tools不要追我
-# mkdir -p ~/local/bin
-# cd ~/local/bin
-# wget https://github.com/rcedgar/muscle/releases/download/v5.3/muscle-linux-x86.v5.3
-
-
-# chmod +x muscle-linux-x86.v5.3
-# mv muscle-linux-x86.v5.3 muscle
-
-# echo 'export PATH="$HOME/local/bin:$PATH"' >> ~/.bashrc
-# source ~/.bashrc
-
 # Install MAFFT
 conda install conda-forge::mafft
-
 
 ```
 
@@ -51,7 +38,7 @@ The tool provides four main commands: （现在只能用run-all，我还没有�
 
 Important: The VCF and reference FASTA files must use numeric chromosome identifiers (e.g., 1, 2, 3 for chromosomes) without additional prefixes or suffixes. Ensure your files adhere to this convention to avoid processing errors.
 
-Example of a VCF File Header: （VCF记得解压）
+Example of a VCF File Header: （VCF现在可以不解压了）
 
 ```##fileformat=VCFv4.2
 ##source=YourTool
@@ -74,14 +61,13 @@ panherit run-all \
     --vcf test.vcf \
     --ref test.fasta \
     --out output_directory \
-    --window-size 4 \
     --threads 4
 ```
 Options:
 - `--vcf`: Input VCF file containing structural variants
 - `--ref`: Reference genome FASTA file
 - `--out`: Output directory for processed variants and FASTA files
-- `--window-size`: Size of k-mer windows (default: 4)
+- `--window-size`: 现在不需要输入这个了，为固定值1
 - `--threads`: Number of parallel threads (default: 1)
 
 
@@ -113,8 +99,11 @@ Options:
 - **l. variants_extended.fasta**: 按照POS截取并分组的fasta文件汇总（已经过预比对，对insertion存在bug）
 
 ## 2. 子文件夹：alignment_results
-- **a. Group_?_?_input.fasta**: Group_"chrom"_"number"，从variants_extended.fasta截取并简化的fasta文件，作为align的输入
-- **b. Group_?_?_aligned.fasta**: 上一个文件经过比对后的结果文件，用于下一步kmer的生成
+- **a. Group_?_?_?_input_origin.fasta**: Group_"chrom"_"number"_"pos"，从variants_extended.fasta截取并简化的fasta文件，作为align的输入，进行了预对齐，没有切片
+- **b. Group_?_?_?_aligned.fasta**: 上一个文件经过比对后的结果文件，用于下一步kmer的生成
+- **c. Group_?_?_?_input_spliced_?.fasta**: 顾名思义，就是同pos的insertion的切片的序号
+- **d. Group_?_?_?_aligned_spliced_?.fasta**：切片完成后，mafft软件比对的结果，对应的无spliced后缀的aligned.fasta文件就是合并后的最终align结果
 
+  
 ## 3. 子文件夹：logs
 - 错误信息一部分会生成于此
