@@ -6,7 +6,7 @@ import pandas as pd
 from .config import Config
 from .variant_processing.vcf_parser import process_variants
 from .variant_processing.fasta_generator import generate_fasta_sequences
-from .alignment.muscle_wrapper import run_alignments
+from .alignment.mafft_wrapper import run_alignments 
 from .kmer.window_generator import process_fasta_files, save_kmer_results_to_csv, process_and_merge_results, read_fasta_files , parse_fasta_with_metadata
 from .kmer.comparison import process_comparison_results
 from .genotype.genotype_mapper import create_ped_and_map_files, create_vcf_file, process_diff_array, process_vcf_to_x_matrix, compute_t_matrix, save_rsv_meta, extract_vcf_sample, vcf_generate, detect_abnormal
@@ -183,11 +183,13 @@ def convert_to_plink_cmd(csv_file: str, vcf_file: str, output_dir: str):
 @click.option('--vcf', required=True, help='Input VCF file')
 @click.option('--ref', required=True, help='Reference FASTA file')
 @click.option('--out', required=True, help='Output directory')
-@click.option('--window-size', default=4, type=int, help='K-mer window size (default: 4)')
+#@click.option('--window-size', default=1, type=int, help='K-mer window size (default: 4)')
 @click.option('--threads', default=1, type=int, help='Number of threads')
-def run_all(vcf: str, ref: str, out: str, window_size: int, threads: int):
+
+def run_all(vcf: str, ref: str, out: str, threads: int):
     """Run the complete pipeline."""
     try:
+        window_size = 1
         click.echo("Step 1: Processing VCF and generating FASTA...")
         config = Config(vcf_file=vcf, ref_fasta=ref, output_dir=out)
         grouped_variants_list = process_variants(config)
@@ -232,13 +234,13 @@ def run_all(vcf: str, ref: str, out: str, window_size: int, threads: int):
         process_and_merge_results(processed_csv, final_csv)
         click.echo(f"K-mer processing completed. Results saved in {final_csv}")
 
-        click.echo("Step 4: Converting to VCF format...")
-        vcf_prefix = os.path.join(out, "pangenome")
+        click.echo("Step 4: Converting to VCF format and Generating matrix...")
+        #vcf_prefix = os.path.join(out, "pangenome")
         #csv_data = pd.read_csv(final_csv)
         # Step 1: 处理 diff_array，生成 D_matrix
         process_diff_array(final_csv, out)
-        # Step 2: 读取 VCF，生成 X_matrix
-        process_vcf_to_x_matrix(vcf, out)
+        # Step 2: 读取 VCF，生成 X_matrix，并且储存sample_names
+        sample_names = process_vcf_to_x_matrix(vcf, out)
         # Step 3: 计算 T_matrix
         compute_t_matrix(out)
 
@@ -250,7 +252,8 @@ def run_all(vcf: str, ref: str, out: str, window_size: int, threads: int):
         output_vcf = os.path.join(out, "output.vcf")
         rsv_vcf = os.path.join(out, "pangenome_rsv.vcf")
         extract_vcf_sample(rsv_meta_csv, gt_matrix, out)#生成gt_matrix，用于填充vcf的GT
-        vcf_generate(vcf, rsv_meta_csv, output_vcf, gt_matrix, rsv_vcf)#最终生成rsv.vcf
+        #扔进去sample_names用于生成vcf
+        vcf_generate(sample_names, rsv_meta_csv, output_vcf, gt_matrix, rsv_vcf)#最终生成rsv.vcf
 
 
         click.echo("pangenome_rsv.vcf generated!")
