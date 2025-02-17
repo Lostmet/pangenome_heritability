@@ -92,7 +92,7 @@ def parse_fasta_with_metadata(file_path: str):
                 else:
                     
                     pass
-
+    #print(f"meta data: {data}")
     return data
 
 
