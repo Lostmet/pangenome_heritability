@@ -1,6 +1,6 @@
-"""Sequence alignment using MUSCLE."""
+"""Sequence alignment using MAFFT."""
 
-from .muscle_wrapper import (
+from .mafft_wrapper import (
     run_alignments,
 )
 from .alignment_processor import process_alignments
