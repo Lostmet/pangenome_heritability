@@ -427,20 +427,20 @@ def process_diff_array(input_csv: str, output_dir: str):
     df = pd.read_csv(input_path)
 
     group_dict = {}
-    group_meta_pos = {}  # 记录每个 group 的 seq1 的 meta_array 第一个 pos 值
+    #group_meta_pos = {}  # 记录每个 group 的 seq1 的 meta_array 第一个 pos 值
 
     for _, row in df.iterrows():
         group_name = row['chromosome_group']
         seq_id = row['sequence_id']
         diff_array_str = row['diff_array']
-        meta_array_str = row['meta_array']  # 读取 meta_array
+        #meta_array_str = row['meta_array']  # 读取 meta_array
 
         try:
             diff_array = json.loads(diff_array_str)
         except json.JSONDecodeError:
             print(f"Error decoding diff_array for {group_name}. Skipping this row.")
             continue
-
+        '''       
         try:
             meta_array = json.loads(meta_array_str.replace("'", "\""))
             if isinstance(meta_array, list) and len(meta_array) > 0:
@@ -449,9 +449,9 @@ def process_diff_array(input_csv: str, output_dir: str):
                 meta_pos_value = 'unknown'
         except json.JSONDecodeError:
             meta_pos_value = 'unknown'
-
-        if group_name not in group_meta_pos:
-            group_meta_pos[group_name] = meta_pos_value
+        ''' 
+        #if group_name not in group_meta_pos:
+            #group_meta_pos[group_name] = meta_pos_value
 
         if diff_array != [1]:
             if group_name not in group_dict:
@@ -468,8 +468,8 @@ def process_diff_array(input_csv: str, output_dir: str):
         rows = [[seq_id] + diff_array for seq_id, diff_array in zip(seq_ids, diff_arrays)]
         df_new = pd.DataFrame(rows, columns=columns)
 
-        meta_pos_value = group_meta_pos.get(group_name, 'unknown')
-        output_file = os.path.join(output_dir, f"{group_name}_{meta_pos_value}_D_matrix.csv")
+        #meta_pos_value = group_meta_pos.get(group_name, 'unknown')
+        output_file = os.path.join(output_dir, f"{group_name}_D_matrix.csv")
         df_new.to_csv(output_file, index=False)
         #print(f"Matrix for {group_name} saved to {output_file}")
 
@@ -480,21 +480,32 @@ def process_diff_array(input_csv: str, output_dir: str):
 #2/8改了一下X矩阵，应该没啥问题）
 def process_vcf_to_x_matrix(vcf_name: str, output_dir: str):
     """ 从 VCF 文件提取 GT 矩阵，并匹配 D_matrix 生成 X_matrix """
-    with open(vcf_name) as f:
-        header = None
-        for line in f:
-            if line.startswith('#CHROM'):
-                header = line.strip().split('\t')
-                break
+    vcf_file = pysam.VariantFile(vcf_name, 'r')  # 使用 pysam 打开 VCF 文件
+    sample_names = list(vcf_file.header.samples)  # 获取样本名称列表
 
-    if header is None:
-        print("Error: Could not find the header line in the VCF file!")
-        return
+    # 存储 GT 数据的列表
+    gt_data = []
 
-    df_vcf = pd.read_csv(vcf_name, sep="\t", comment="#", header=None)
-    df_vcf.columns = header
-    sample_names = header[9:]
+    # 逐行遍历 VCF 文件
+    for record in vcf_file:
+        # 获取每个样本的 GT 信息
+        gt_row = [record.contig, record.pos]  # 每行包含染色体和位置
 
+        for sample in sample_names:
+            gt = record.samples[sample]["GT"]
+            #print(f"gt:{gt}")
+            if gt == (None, None):  # 处理缺失值
+                gt_row.append("./.")
+            else:
+                gt_row.append(f"{gt[0]}/{gt[1]}")  # 格式化为 '0/1'
+
+        gt_data.append(gt_row)
+
+    # 将 GT 数据转换为 DataFrame
+    header = ["#CHROM", "POS"] + sample_names  # 只保留染色体、位置和样本名称
+    df_vcf = pd.DataFrame(gt_data, columns=header)
+
+    # 转换基因型函数
     def transform_gt(gt):
         if gt == './.': return 0
         elif gt == '0/0': return 0
@@ -502,6 +513,7 @@ def process_vcf_to_x_matrix(vcf_name: str, output_dir: str):
         elif gt == '1/1': return 2
         else: return -1
 
+    # 对样本列应用基因型转换
     for sample in sample_names:
         df_vcf[sample] = df_vcf[sample].apply(transform_gt)
 
@@ -533,9 +545,11 @@ def process_vcf_to_x_matrix(vcf_name: str, output_dir: str):
         csv_data = pd.read_csv(os.path.join(output_dir, csv_file), usecols=[0])
         num_rows_to_extract = len(csv_data)
 
+        # 获取 VCF 子集数据
         vcf_subset = df_vcf.iloc[start_idx : start_idx + num_rows_to_extract].reset_index(drop=True)
         gt_matrix = vcf_subset[sample_names]
 
+        # 合并 CSV 数据和 GT 矩阵
         csv_data.columns = [f"{chrom}_{pos}"]
         csv_data = pd.concat([csv_data, gt_matrix], axis=1)
 
@@ -548,8 +562,7 @@ def process_vcf_to_x_matrix(vcf_name: str, output_dir: str):
         else:
             continue
             #print(f"Saved modified CSV: {output_file}")
-
-
+    return sample_names
 # -----------------------------------
 # Step 3: 计算 T_matrix
 # -----------------------------------
@@ -703,14 +716,14 @@ def extract_vcf_sample(input_csv: str, output_vcf: str, out: str):
     gt_data = []
 
     for index, row in df_meta.iterrows():
-        group_name = row["group_name"]  # 例："Group_2_19_rSV1"
-        match = re.match(r"Group_(\d+)_(\d+)_([rR][sS][vV]\d+)", group_name)
+        group_name = row["group_name"]  # 例："Group_2_19_某pos_rSV1"
+        match = re.match(r"Group_(\d+)_(\d+)_(\d+)_([rR][sS][vV]\d+)", group_name)
 
         if not match:
             print(f"⚠️ Skipping invalid group_name: {group_name}")
             continue
 
-        chrom, number, rsv_name = match.groups()
+        chrom, number, pos, rsv_name = match.groups()
 
         # **查找匹配的 T_matrix 文件**
         t_matrix_file = find_t_matrix_file(chrom, number, out)
@@ -742,7 +755,7 @@ def extract_vcf_sample(input_csv: str, output_vcf: str, out: str):
 
 ########生成rsv
 
-def vcf_generate(input_vcf: str, csv_file: str, output_vcf: str, gt_file: str, output_filled_vcf: str):
+def vcf_generate(sample_names: list, csv_file: str, output_vcf: str, gt_file: str, output_filled_vcf: str):
     # 读取 CSV 文件
     df = pd.read_csv(csv_file)
 
@@ -769,22 +782,19 @@ def vcf_generate(input_vcf: str, csv_file: str, output_vcf: str, gt_file: str, o
             continue
 
     # 转换为 DataFrame
-    vcf_df = pd.DataFrame(vcf_data, columns=["#CHROM", "POS", "ID", "REF", "ALT", "QUAL", "FILTER", "INFO", "FORMAT"])
+    columns = ["#CHROM", "POS", "ID", "REF", "ALT", "QUAL", "FILTER", "INFO", "FORMAT"]
+    vcf_df = pd.DataFrame(vcf_data, columns = ["#CHROM", "POS", "ID", "REF", "ALT", "QUAL", "FILTER", "INFO", "FORMAT"])
 
     # **按 CHROM 和 POS 进行排序**
     vcf_df.sort_values(by=["#CHROM", "POS"], inplace=True)
-
+    #print(vcf_df.columns)
     """ 从原始 VCF 提取列名，并保持一致写入新 VCF """
-    with open(input_vcf, "r") as infile, open(output_vcf, "w") as outfile:
-        for line in infile:
-            if line.startswith("#CHROM"):
-                header = line.strip()  # 提取正确的列名
-                outfile.write("##fileformat=VCFv4.2\n")  # VCF 版本信息
-                outfile.write('##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">\n')
-                outfile.write(header + "\n")  # 写入正确的表头
-                break  # 找到 #CHROM 就停止
-        else:
-            raise ValueError("❌ VCF 文件格式错误，没有找到 #CHROM 行！")
+    with open(output_vcf, "w") as outfile:
+        header = "\t".join(columns) + "\t" + "\t".join(sample_names)  # 提取正确的列名
+        outfile.write("##fileformat=VCFv4.2\n")  # VCF 版本信息
+        outfile.write('##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">\n')
+        outfile.write(header + "\n")  # 写入正确的表头
+
         vcf_df.to_csv(outfile, sep="\t", index=False, header=False)
     #print(f"✅ VCF 头部提取完成，已写入 {output_vcf}")
 
