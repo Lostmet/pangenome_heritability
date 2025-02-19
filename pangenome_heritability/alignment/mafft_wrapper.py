@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import List, Dict
 from tqdm import tqdm
 from Bio import SeqIO
+import re
 
 from ..exceptions import AlignmentError
 from ..utils.logging_utils import get_logger
@@ -82,6 +83,8 @@ def run_mafft(input_fasta: Path, output_fasta: Path, log_dir: Path = None) -> No
 def align_group(group_name: str, sequences: List[str], temp_dir: Path, log_dir: Path, has_insertion: bool, poly_ins_list) -> AlignmentResult:
     """Align a single group of sequences using MAFFT or just write input if no insertion is present."""
     output_fasta = temp_dir / f"{group_name}_aligned.fasta"
+    pos = int(re.search(r'(\d+)$', group_name).group(1))
+    #print(f"align_group_pos = {pos}")
     #print(sequences)
     # Write sequences to FASTA    
     if has_insertion:
@@ -94,6 +97,9 @@ def align_group(group_name: str, sequences: List[str], temp_dir: Path, log_dir: 
         origin_fasta = parse_fasta(input_fasta)
 
         # 对于同pos多insertion的list进行剿灭
+        #print(f"优化前ins_list:{poly_ins_list}, pos = {pos}, 数值类型：{type(pos)}")
+        poly_ins_list = [item for item in poly_ins_list if item['pos'] == pos]
+        #print(f"优化后的ins_list:{poly_ins_list}")
         for i, ins_start_end in enumerate(poly_ins_list):
             input_fasta_spliced = temp_dir / f"{group_name}_input_spliced_{i+1}.fasta"
             output_fasta_spliced = temp_dir / f"{group_name}_aligned_spliced_{i+1}.fasta"
