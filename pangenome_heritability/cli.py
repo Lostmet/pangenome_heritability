@@ -199,7 +199,7 @@ def run_all(vcf: str, ref: str, out: str, threads: int):
         
         # ✅ 解包生成的输出，获取 fasta 文件路径和 has_insertion
         fasta_path, has_insertion_dict, poly_ins_list = generate_fasta_sequences(config, grouped_variants_dict)
-
+        #print(f"打印一下list：{poly_ins_list}")
         click.echo(f"FASTA file generated: {fasta_path}")
 
         click.echo("Step 2: Running alignments...")
@@ -212,6 +212,7 @@ def run_all(vcf: str, ref: str, out: str, threads: int):
 
         # ✅ 传递两个参数，路径和has_insertion
         run_alignments(alignments_config, fasta_path, has_insertion_dict, poly_ins_list)
+        #print(f"dict:{has_insertion_dict}, list:{poly_ins_list}")
         click.echo(f"Alignments completed. Results saved in alignment_results directory")
 
         click.echo("Step 3: Processing K-mers...")
@@ -222,15 +223,19 @@ def run_all(vcf: str, ref: str, out: str, threads: int):
         
         # 获取genome metadata
         genome_metadata = parse_fasta_with_metadata(fasta_path)
+        #print(f"meta: {genome_metadata}")
         
         results = process_fasta_files(
             alignments_dir, 
+            has_insertion_dict, 
+        # 传入has_insertion_dict:{'Group_2_1_906668': True, 'Group_2_2_906670': True, 'Group_2_3_906736': False}
             genome_metadata=genome_metadata,
-            k=window_size, 
             max_workers=threads
         )
+        #print(f"results: {results}")
+
         save_kmer_results_to_csv(results, intermediate_csv)
-        process_comparison_results(intermediate_csv, processed_csv)
+        process_comparison_results(intermediate_csv, processed_csv) # 用于处理未成功比对的seq
         process_and_merge_results(processed_csv, final_csv)
         click.echo(f"K-mer processing completed. Results saved in {final_csv}")
 
