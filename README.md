@@ -89,14 +89,14 @@ Options:
 - **b. Group_?_?_?_T_matrix.csv**: 对应的T矩阵，rSV-samples
 - **c. Group_?_?_?_X_matrix.csv**: 对应的X矩阵, SV-samples
 - **d. GT_matrix.csv**: T矩阵的合并（rsv.vcf的GT矩阵，格式为1/0类型）
-- **e. ⭐ output_final_results.csv**: 储存rsv正确的ref和alt，同一个rsv会有多个alt（或许是个bug，在windows_size不是1的情况下会出现）
+- **e. ⭐ output_final_results.csv**: 储存rsv正确的ref和alt，同一个rsv会有多个alt
 - **f. output.vcf**: 无GT矩阵的vcf
 - **g. ⭐ pangenome_rsv.vcf**: 最终输出的rsv的vcf文件
 - **h. (processed_) comparison_results.csv**: kmer比对的过程文件
 - **i. rsv_meta.csv**: 填充入vcf文件中的ID，pos，ref，alt的初始文件（目前还不是真正对应的ref和alt）
 - **j. T_matrix_abnormal_all.csv**: rSV-sample矩阵（T矩阵）中异常值占非零正常值的比例
 - **k. T_matrix_abnormal.csv**: 具体group_name下的，每个T矩阵中非零值的数目，异常值的数目和比例
-- **l. variants_extended.fasta**: 按照POS截取并分组的fasta文件汇总（已经过预比对，对insertion存在bug）
+- **l. variants_extended.fasta**: 按照POS截取并分组的fasta文件汇总
 
 ## 2. 子文件夹：alignment_results
 - **a. Group_?_?_?_input_origin.fasta**: Group_"chrom"_"number"_"pos"，从variants_extended.fasta截取并简化的fasta文件，作为align的输入，进行了预对齐，没有切片
