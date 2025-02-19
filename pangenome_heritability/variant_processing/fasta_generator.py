@@ -8,7 +8,7 @@ def generate_fasta_sequences(config: Config, variant_groups: Dict[str, List[Vari
     output_fasta = f"{config.output_dir}/variants_extended.fasta"
     ref_genome = pysam.FastaFile(config.ref_fasta)
     has_insertion_dict = {}  # 记录Group是否包含Insertion
-    poly_ins_dict = []
+    poly_ins_list = []
 
     try:
         with open(output_fasta, 'w') as fasta_out:
@@ -25,17 +25,18 @@ def generate_fasta_sequences(config: Config, variant_groups: Dict[str, List[Vari
 
                     # 调整参考序列 (更改为了adjusted)
                     ref_seq_adjusted = adjust_reference_for_insertions(ref_seq, max_insertions)
-
+                    poly_ins_dict = []
                     # 写入参考序列
                     fasta_out.write(f">Group_{chrom}_{i}_{group.start}\n{ref_seq_adjusted}\n")
-
                     for variant in group.variants:
                         var_seq, poly_ins = adjust_variants_for_insertions(ref_seq, max_insertions, variant, start)
                         var_id = f"Variant_{chrom}_{i}_{variant.start}_{variant.end}"
                         fasta_out.write(f">{var_id}\n{var_seq}\n")
                         poly_ins_dict.append(poly_ins)#创建一个[{start: end:}{start: end:}]，对每个都有
+                        
+                    #print(f"poly_ins_dict初始: {poly_ins_dict}, group.start = {group.start}")
                     seen = set()  # 用来记录已经出现过的字典
-                    poly_ins_list = []
+                    
                     for d in poly_ins_dict:
                         if d:  # 过滤掉空字典
                             # 将字典转换为 frozenset 后进行去重
@@ -44,7 +45,7 @@ def generate_fasta_sequences(config: Config, variant_groups: Dict[str, List[Vari
                                 poly_ins_list.append(d)  # 添加不重复的字典
                                 seen.add(dict_frozenset)  # 记录该字典已出现
 
-                    #print(poly_ins_list)                    
+                    #print(f"polyinslist:{poly_ins_list}")                    
 
         return output_fasta, has_insertion_dict, poly_ins_list  # 返回Group是否包含Insertion信息，还有poly_ins信息
 
@@ -143,6 +144,7 @@ def adjust_variants_for_insertions(ref_seq: str, max_insertions: Dict[int, int],
                 if blank != []: #得到同insertion的相对位置
                     poly_ins["start"] = pos + ins
                     poly_ins["end"] = pos + ins + position
+                    poly_ins["pos"] = start + 1
 
                 ins += max_ins_length - 1 ##看看能不能对齐
 
