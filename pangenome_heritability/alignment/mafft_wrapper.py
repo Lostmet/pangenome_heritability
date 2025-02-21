@@ -46,11 +46,11 @@ def parse_fasta(fasta_file: str) -> Dict[str, List[str]]:
     return sequences
 
 
-def run_mafft(input_fasta: Path, output_fasta: Path, log_dir: Path = None) -> None:
+def run_mafft(threads: str, input_fasta: Path, output_fasta: Path, log_dir: Path = None) -> None:
     """Run MAFFT alignment and convert output to uppercase."""
     try:
-        command = ["mafft", "--thread", "20", str(input_fasta)]
-
+        command = ["mafft", "--thread", threads, str(input_fasta)]
+        # print(f"MAFFT输入threads:{threads}")
         
         # 运行 MAFFT 并捕获输出
         result = subprocess.run(
@@ -80,7 +80,7 @@ def run_mafft(input_fasta: Path, output_fasta: Path, log_dir: Path = None) -> No
             f"MAFFT alignment failed for {input_fasta}. Error log saved at: {error_log if log_dir else 'Not logged'}"
         )
 
-def align_group(group_name: str, sequences: List[str], temp_dir: Path, log_dir: Path, has_insertion: bool, poly_ins_list) -> AlignmentResult:
+def align_group(threads: str, group_name: str, sequences: List[str], temp_dir: Path, log_dir: Path, has_insertion: bool, poly_ins_list) -> AlignmentResult:
     """Align a single group of sequences using MAFFT or just write input if no insertion is present."""
     output_fasta = temp_dir / f"{group_name}_aligned.fasta"
     pos = int(re.search(r'(\d+)$', group_name).group(1))
@@ -107,7 +107,7 @@ def align_group(group_name: str, sequences: List[str], temp_dir: Path, log_dir: 
             with open(input_fasta_spliced, "w") as f:
                 for i, seq in enumerate(sequences):
                     f.write(f">seq{i}\n{seq[ins_start_end['start']:ins_start_end['end']]}\n") #进行切片
-            run_mafft(input_fasta_spliced, output_fasta_spliced, log_dir=log_dir)#切片部分进行align操作
+            run_mafft(threads, input_fasta_spliced, output_fasta_spliced, log_dir=log_dir)#切片部分进行align操作
             spliced_fasta = parse_fasta(output_fasta_spliced)
             #print(f"切片：{spliced_fasta}")
             try:
@@ -184,7 +184,7 @@ def run_alignments(config, fasta_file: str, has_insertion_dict: Dict[str, bool],
         for group_name, sequences in group_sequences.items():
             has_insertion = has_insertion_dict.get(group_name, False)  # 直接使用传入的 `has_insertion`，而不是从 `dict` 里取值
             # 提交到线程池，进行 MAFFT 对齐或直接写入
-            futures[executor.submit(align_group, group_name, sequences, temp_dir, log_dir, has_insertion, poly_ins_list)] = group_name
+            futures[executor.submit(align_group, config.threads, group_name, sequences, temp_dir, log_dir, has_insertion, poly_ins_list)] = group_name
 
         
         # 处理异步任务的结果
