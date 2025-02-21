@@ -2,7 +2,10 @@ from typing import Dict, List, Tuple
 from ..config import Config
 from .vcf_parser import VariantGroup, Variant
 import pysam
-import numpy as np
+from tqdm import tqdm
+
+import concurrent.futures
+from tqdm import tqdm
 
 def generate_fasta_sequences(config: Config, variant_groups: Dict[str, List[VariantGroup]]) -> Tuple[str, Dict[str, bool]]:
     output_fasta = f"{config.output_dir}/variants_extended.fasta"
@@ -10,47 +13,70 @@ def generate_fasta_sequences(config: Config, variant_groups: Dict[str, List[Vari
     has_insertion_dict = {}  # 记录Group是否包含Insertion
     poly_ins_list = []
 
+    # 计算所有组的总数，用于进度条的 total
+    total_groups = sum(len(groups) for groups in variant_groups.values())  # 所有组的总数
+
+    # 定义用于处理单个组的辅助函数
+    def process_group(chrom, i, group):
+        start = group.start - 1
+        end = group.end
+        ref_seq = ref_genome.fetch(chrom, start, end).upper()  # 只提取 group 内的序列
+
+        # 计算Insertion信息
+        max_insertions, has_insertion = get_max_insertions(group.variants, start)
+        has_insertion_dict[f"Group_{chrom}_{i}_{group.start}"] = has_insertion  # 记录是否包含Insertion
+
+        # 调整参考序列
+        ref_seq_adjusted = adjust_reference_for_insertions(ref_seq, max_insertions)
+
+        # 处理变异并生成结果
+        variant_results = []
+        for variant in group.variants:
+            var_seq, poly_ins = adjust_variants_for_insertions(ref_seq, max_insertions, variant, start)
+            var_id = f"Variant_{chrom}_{i}_{variant.start}_{variant.end}"
+            variant_results.append((var_id, var_seq, poly_ins))  # 保存变异的ID，序列和poly_ins信息
+
+        return chrom, i, group, ref_seq_adjusted, variant_results  # 返回所有必要信息
+
+    # 启动并行处理
     try:
         with open(output_fasta, 'w') as fasta_out:
-            for chrom, groups in variant_groups.items():
-                for i, group in enumerate(groups, 1):
-                    start = group.start - 1
-                    end = group.end
+            with tqdm(total=total_groups, desc="Pre-aligning variant groups", unit="group") as pbar:  # 创建进度条
+                futures = []
+                with concurrent.futures.ThreadPoolExecutor(max_workers=config.threads) as executor:
+                    # 提交每个组的处理任务
+                    for chrom, groups in variant_groups.items():
+                        for i, group in enumerate(groups, 1):
+                            futures.append(executor.submit(process_group, chrom, i, group))
 
-                    ref_seq = ref_genome.fetch(chrom, start, end).upper()  # 只提取 group 内的序列
-
-                    # 计算Insertion信息
-                    max_insertions, has_insertion = get_max_insertions(group.variants, start)
-                    has_insertion_dict[f"Group_{chrom}_{i}_{group.start}"] = has_insertion  # 记录是否包含Insertion
-
-                    # 调整参考序列 (更改为了adjusted)
-                    ref_seq_adjusted = adjust_reference_for_insertions(ref_seq, max_insertions)
-                    poly_ins_dict = []
-                    # 写入参考序列
-                    fasta_out.write(f">Group_{chrom}_{i}_{group.start}\n{ref_seq_adjusted}\n")
-                    for variant in group.variants:
-                        var_seq, poly_ins = adjust_variants_for_insertions(ref_seq, max_insertions, variant, start)
-                        var_id = f"Variant_{chrom}_{i}_{variant.start}_{variant.end}"
-                        fasta_out.write(f">{var_id}\n{var_seq}\n")
-                        poly_ins_dict.append(poly_ins)#创建一个[{start: end:}{start: end:}]，对每个都有
-                        
-                    #print(f"poly_ins_dict初始: {poly_ins_dict}, group.start = {group.start}")
                     seen = set()  # 用来记录已经出现过的字典
-                    
-                    for d in poly_ins_dict:
-                        if d:  # 过滤掉空字典
-                            # 将字典转换为 frozenset 后进行去重
-                            dict_frozenset = frozenset(d.items())
-                            if dict_frozenset not in seen:
-                                poly_ins_list.append(d)  # 添加不重复的字典
-                                seen.add(dict_frozenset)  # 记录该字典已出现
 
-                    #print(f"polyinslist:{poly_ins_list}")                    
+                    # 处理每个已完成的任务
+                    for future in concurrent.futures.as_completed(futures):
+                        chrom, i, group, ref_seq_adjusted, variant_results = future.result()
+
+                        # 写入参考序列
+                        fasta_out.write(f">Group_{chrom}_{i}_{group.start}\n{ref_seq_adjusted}\n")
+
+                        # 写入变异序列和poly_ins信息
+                        for var_id, var_seq, poly_ins in variant_results:
+                            fasta_out.write(f">{var_id}\n{var_seq}\n")
+
+                            # 更新 poly_ins_list
+                            if poly_ins:  # 过滤掉空字典
+                                dict_frozenset = frozenset(poly_ins.items())
+                                if dict_frozenset not in seen:
+                                    poly_ins_list.append(poly_ins)  # 添加不重复的字典
+                                    seen.add(dict_frozenset)  # 记录该字典已出现
+
+                        # 更新进度条
+                        pbar.update(1)  # 每处理一个组，进度条更新一次
 
         return output_fasta, has_insertion_dict, poly_ins_list  # 返回Group是否包含Insertion信息，还有poly_ins信息
 
     finally:
-        ref_genome.close()
+        ref_genome.close()  # 关闭参考基因组文件
+        # print(f'预比对输入threads:{config.threads}')
 
 
 def get_max_insertions(variants: List[Variant], start: int) -> Tuple[Dict[int, int], bool]:
