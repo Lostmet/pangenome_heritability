@@ -442,7 +442,7 @@ def process_fasta_files(
                 for file_name, sequences in fasta_contents.items()
             }
             
-            for future in tqdm(as_completed(futures), total=len(futures), desc="Processing files", bar_format="{desc}: {n_fmt}/{total_fmt} groups"):
+            for future in tqdm(as_completed(futures), total=len(futures), desc="Generating kmers", bar_format="{desc}: {n_fmt}/{total_fmt} groups"):
                 result = future.result()
                 if result['error']:
                     errors.append(f"Error in {result['file_name']}: {result['error']}")
@@ -529,88 +529,104 @@ def retain_changed_columns_group_with_index(rows: List[List[int]]) -> Tuple[List
     return retained, retained_indices
 
 
+
+from concurrent.futures import ThreadPoolExecutor, as_completed
+import pandas as pd
+from tqdm import tqdm
+
+def process_group(chrom, group):
+    """
+    处理每个chrom的组，返回处理结果。
+    """
+    diff_arrays = []
+    meta_arrays = []
+    sequence_ids = []
+    
+    for _, row in group.iterrows():
+        try:
+            diff_array = eval(row['diff_array']) if isinstance(row['diff_array'], str) else row['diff_array']
+            meta_array = eval(row['meta_array']) if isinstance(row['meta_array'], str) else row['meta_array']
+            
+            if not diff_array or not meta_array:
+                logger.warning(f"Skipping empty arrays: chromosome_group={chrom}, sequence_id={row['sequence_id']}")
+                continue
+                
+            diff_arrays.append(diff_array)
+            meta_arrays.append(meta_array)
+            sequence_ids.append(row['sequence_id'])
+        except Exception as e:
+            logger.warning(f"Error processing row data: {str(e)}, skipping this row. chromosome_group={chrom}, sequence_id={row['sequence_id']}")
+            continue
+    
+    if len(diff_arrays) < 1 or len(meta_arrays) < 1:
+        logger.warning(f"Group {chrom} does not have enough valid data for processing")
+        return None
+    
+    # 使用 retain_changed_columns_group_with_meta 处理数据
+    retained_diff, retained_meta = retain_changed_columns_group_with_meta(diff_arrays, meta_arrays)
+    if not retained_diff or not retained_meta or len(retained_diff) != len(sequence_ids):
+        logger.warning(f"Invalid processing results for group {chrom}")
+        return None
+    
+    # 处理结果，去掉 '-' 字符
+    merged_results = []
+    for i, seq_id in enumerate(sequence_ids):
+        if i < len(retained_diff) and i < len(retained_meta):
+            processed_meta = []
+            for meta in retained_meta[i]:
+                processed_meta.append({
+                    'pos': meta['pos'],
+                    'ref': meta['ref'],  # 可以移除 '-' 字符
+                    'alt': meta['alt']   # 可以移除 '-' 字符
+                })
+            
+            merged_results.append({
+                'chromosome_group': chrom,
+                'sequence_id': seq_id,
+                'diff_array': retained_diff[i],
+                'meta_array': processed_meta
+            })
+    
+    return merged_results
+
 def process_and_merge_results(input_csv: str, output_csv: str):
     """
     Process and merge k-mer window results, removing '-' characters in the final results.
     """
     try:
-        # Read CSV file
+        # 读取CSV文件
         df = pd.read_csv(input_csv)
         
         if df.empty:
             logger.warning("Input file is empty")
             return
         
-        # Group by chromosome_group
+        # 根据chromosome_group分组
         grouped = df.groupby('chromosome_group')
-        #print(f'grouped: {list(grouped)}') 
-        # # 元组列表
-        # 0  Group_2_1_906668   seq1  [0]  [{'pos': 906668, 'ref': 'T', 'alt': 'T'}]   NaN
+        
+        # 计算进度条总任务数：所有组的数量
+        total_groups = len(grouped)
         
         merged_results = []
         
-        for chrom, group in grouped:
-            try:
-                diff_arrays = []
-                meta_arrays = []
-                sequence_ids = []
+        # 使用进度条
+        with tqdm(total=total_groups, desc="Merging kmers", unit="group") as pbar:
+            # 使用ThreadPoolExecutor来并行处理每个组
+            with ThreadPoolExecutor(max_workers=4) as executor:
+                future_to_group = {executor.submit(process_group, chrom, group): chrom for chrom, group in grouped}
                 
-                for _, row in group.iterrows():
-                    try:
-                        diff_array = eval(row['diff_array']) if isinstance(row['diff_array'], str) else row['diff_array']
-                        meta_array = eval(row['meta_array']) if isinstance(row['meta_array'], str) else row['meta_array']
-                        
-                        if not diff_array or not meta_array:
-                            logger.warning(f"Skipping empty arrays: chromosome_group={chrom}, sequence_id={row['sequence_id']}")
-                            continue
-                            
-                        diff_arrays.append(diff_array)
-                        meta_arrays.append(meta_array)
-                        sequence_ids.append(row['sequence_id'])
-                    except Exception as e:
-                        logger.warning(f"Error processing row data: {str(e)}, skipping this row. chromosome_group={chrom}, sequence_id={row['sequence_id']}")
-                        continue
-                
-                if len(diff_arrays) < 1 or len(meta_arrays) < 1:
-                    logger.warning(f"Group {chrom} does not have enough valid data for processing")
-                    continue
-                
-                # Process data using retain_changed_columns_group_with_meta
-                retained_diff, retained_meta = retain_changed_columns_group_with_meta(diff_arrays, meta_arrays)
-                
-                if not retained_diff or not retained_meta or len(retained_diff) != len(sequence_ids):
-                    logger.warning(f"Invalid processing results for group {chrom}")
-                    continue
-                
-                # Process results, removing '-' characters
-                
-                for i, seq_id in enumerate(sequence_ids):
-                    if i < len(retained_diff) and i < len(retained_meta):
-                        # Process '-' characters in meta_array
-                        processed_meta = []
-                        for meta in retained_meta[i]:
-                            processed_meta.append({
-                                'pos': meta['pos'],
-                                'ref': meta['ref'],#.replace('-', ''),  # Remove '-' in ref
-                                'alt': meta['alt']#.replace('-', '')   # Remove '-' in alt
-                            })
-                        
-                        merged_results.append({
-                            'chromosome_group': chrom,
-                            'sequence_id': seq_id,
-                            'diff_array': retained_diff[i],
-                            'meta_array': processed_meta
-                        })
-                
-            except Exception as e:
-                logger.error(f"Error processing group {chrom}: {str(e)}")
-                continue
+                # 遍历每个任务的结果
+                for future in as_completed(future_to_group):
+                    result = future.result()
+                    if result:
+                        merged_results.extend(result)
+                    pbar.update(1)  # 每个任务完成后更新进度条
         
         if not merged_results:
             logger.warning("No valid merged results")
             return
-            
-        # Create new DataFrame and save
+        
+        # 创建新的DataFrame并保存
         merged_df = pd.DataFrame(merged_results)
         merged_df.to_csv(output_csv, index=False)
         logger.info(f"Merged results saved to: {output_csv}")
@@ -618,6 +634,7 @@ def process_and_merge_results(input_csv: str, output_csv: str):
     except Exception as e:
         logger.error(f"Error during processing: {str(e)}")
         raise
+
 
 def process_chromosome_groups(input_csv: str, output_csv: str) -> None:
     """
@@ -699,7 +716,7 @@ def explode_final_results(input_csv: str, output_csv: str) -> None:
 def retain_changed_columns_group_with_meta(
     rows: List[List[int]], 
     meta_rows: List[List[Dict]]
-) -> Tuple[List[List[int]], List[List[Dict]]]:
+) -> Tuple[List[List[int]], List[List[Dict]]]: # 合并函数
     """
     Process difference arrays and metadata arrays, merging identical columns starting from the first column.
     
@@ -714,15 +731,20 @@ def retain_changed_columns_group_with_meta(
         return [], []
     
     if len(rows) != len(meta_rows):
-        raise ValueError("Mismatch between the lengths of difference arrays and metadata arrays")
+        raise ValueError(f"Mismatch between the lengths of difference arrays and metadata arrays, meta_data_pos:{meta_rows[0][0]['pos']}")
+    # 调试print meta_rows
+    # print(f"Mismatch between the lengths of difference arrays and metadata arrays, meta_data_pos:{meta_rows[0][0]['pos']}")
 
     num_rows = len(rows)
     num_cols = len(rows[0])
+    #print(f'num_rows:{num_rows}, num_cols:{num_cols}')
 
-    # Initialize result lists
+    # Initialize result lists, 这个初始化看上去是把第一个东西先扔上去
     retained_diff = [[rows[i][0]] for i in range(num_rows)]
     retained_meta = [[meta_rows[i][0]] for i in range(num_rows)]
-    
+    #print(f'diff:{rows}, meta:{meta_rows}\nretained diff:{retained_diff}, meta: {retained_meta}')
+    # diff:[[0, 1, 1, 1, 1, 1, 1], [1, 1, 0, 0, 0, 0, 0]]
+    # retained diff:[[0], [1]]，保留了每组第一个
     current_col = 0  # Current column index being processed
     
     # Compare starting from the second column
@@ -756,43 +778,3 @@ def retain_changed_columns_group_with_meta(
 
     return retained_diff, retained_meta
 
-# Example usage:
-"""
-# Input example:
-diff_arrays = [
-    [0, 0, 1, 1],
-    [1, 1, 0, 0]
-]
-
-meta_arrays = [
-    [
-        {'pos': 100, 'ref': 'ATG', 'alt': 'ATG'},
-        {'pos': 101, 'ref': 'TGC', 'alt': 'TGC'},
-        {'pos': 102, 'ref': 'GC-', 'alt': 'GTA'},  # Contains deletion
-        {'pos': 103, 'ref': 'CAT', 'alt': 'TAT'}
-    ],
-    [
-        {'pos': 100, 'ref': 'ATG', 'alt': 'CTG'},
-        {'pos': 101, 'ref': 'TGC', 'alt': 'TTC'},
-        {'pos': 102, 'ref': 'GCA', 'alt': 'GCA'},
-        {'pos': 103, 'ref': 'CAT', 'alt': 'CAT'}
-    ]
-]
-
-# After processing:
-retained_diff = [
-    [0, 1],
-    [1, 0]
-]
-
-retained_meta = [
-    [
-        {'pos': 100, 'ref': 'ATGC', 'alt': 'ATGC'},
-        {'pos': 103, 'ref': 'CAT', 'alt': 'TAT'}  # Skipped sequence containing deletion
-    ],
-    [
-        {'pos': 100, 'ref': 'ATGC', 'alt': 'CTTC'},
-        {'pos': 102, 'ref': 'GCAT', 'alt': 'GCAT'}
-    ]
-]
-"""
