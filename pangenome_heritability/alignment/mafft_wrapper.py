@@ -49,7 +49,7 @@ def parse_fasta(fasta_file: str) -> Dict[str, List[str]]:
 def run_mafft(threads: int, input_fasta: Path, output_fasta: Path, log_dir: Path = None) -> None:
     """Run MAFFT alignment and convert output to uppercase."""
     try:
-        command = ["mafft", "--thread", threads, str(input_fasta)]
+        command = ["mafft", "--thread", str(threads), str(input_fasta)]
         # print(f"MAFFT输入threads:{threads}")
         
         # 运行 MAFFT 并捕获输出
