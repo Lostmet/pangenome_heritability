@@ -589,7 +589,7 @@ def process_group(chrom, group):
     
     return merged_results
 
-def process_and_merge_results(input_csv: str, output_csv: str):
+def process_and_merge_results(input_csv: str, output_csv: str, threads: str):
     """
     Process and merge k-mer window results, removing '-' characters in the final results.
     """
@@ -612,7 +612,7 @@ def process_and_merge_results(input_csv: str, output_csv: str):
         # 使用进度条
         with tqdm(total=total_groups, desc="Merging kmers", unit="group") as pbar:
             # 使用ThreadPoolExecutor来并行处理每个组
-            with ThreadPoolExecutor(max_workers=4) as executor:
+            with ThreadPoolExecutor(max_workers=threads) as executor:
                 future_to_group = {executor.submit(process_group, chrom, group): chrom for chrom, group in grouped}
                 
                 # 遍历每个任务的结果
@@ -634,7 +634,7 @@ def process_and_merge_results(input_csv: str, output_csv: str):
     except Exception as e:
         logger.error(f"Error during processing: {str(e)}")
         raise
-
+    # print(f'merge输入threads:{threads}')
 
 def process_chromosome_groups(input_csv: str, output_csv: str) -> None:
     """
