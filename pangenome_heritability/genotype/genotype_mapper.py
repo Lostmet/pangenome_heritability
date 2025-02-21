@@ -678,7 +678,11 @@ def find_t_matrix_file(chrom, number, out):
     """ 查找符合 Group_{chrom}_{number}_*_T_matrix.csv 形式的文件 """
     pattern = os.path.join(out, f"Group_{chrom}_{number}_*_T_matrix.csv")  # 拼接路径和模式
     matching_files = glob.glob(pattern)  # 匹配文件
-    return matching_files[0] or None  # 如果没有找到文件，返回空列表
+    if matching_files:
+        return matching_files[0]
+    else:
+        return None
+      # 如果没有找到文件，返回空列表
         # 确保输出目录是绝对路径
     #output_dir = os.path.abspath(output_dir)
 
@@ -708,8 +712,6 @@ def convert_gt(value):
 
 def extract_vcf_sample(input_csv: str, output_vcf: str, out: str):
     """ 从 rsv_meta.csv 解析 group_name，并提取 GT 样本数据 """
-    #input_csv = "rsv_meta_暴力提取.csv"
-    #output_vcf = "vcf_samples.vcf"
 
     df_meta = pd.read_csv(input_csv)
 
