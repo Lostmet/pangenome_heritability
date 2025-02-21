@@ -184,22 +184,23 @@ def convert_to_plink_cmd(csv_file: str, vcf_file: str, output_dir: str):
 @click.option('--ref', required=True, help='Reference FASTA file')
 @click.option('--out', required=True, help='Output directory')
 #@click.option('--window-size', default=1, type=int, help='K-mer window size (default: 4)')
-@click.option('--threads', default=1, type=int, help='Number of threads')
+@click.option('--threads', default=10, type=int, help='Number of threads')
 
 def run_all(vcf: str, ref: str, out: str, threads: int):
     """Run the complete pipeline."""
     try:
-        window_size = 1
         click.echo("Step 1: Processing VCF and generating FASTA...")
-        config = Config(vcf_file=vcf, ref_fasta=ref, output_dir=out)
+        config = Config(vcf_file=vcf, ref_fasta=ref, output_dir=out, threads = threads)
         grouped_variants_list = process_variants(config)
         grouped_variants_dict = {}
         for group in grouped_variants_list:
-            grouped_variants_dict.setdefault(group.chrom, []).append(group)
-        
+            grouped_variants_dict.setdefault(group.chrom, []).append(group) # 得到{"1":[], "2":[]} chrom_number
+
+        #print(f'grouped_variants_dict:{grouped_variants_dict}')
+
         # ✅ 解包生成的输出，获取 fasta 文件路径和 has_insertion
         fasta_path, has_insertion_dict, poly_ins_list = generate_fasta_sequences(config, grouped_variants_dict)
-        #print(f"打印一下list：{poly_ins_list}")
+        #print(f"打印一下list：{poly_ins_list}，还有dict：{has_insertion_dict}")
         click.echo(f"FASTA file generated: {fasta_path}")
 
         click.echo("Step 2: Running alignments...")
@@ -209,6 +210,7 @@ def run_all(vcf: str, ref: str, out: str, threads: int):
             output_dir=out,
             threads=threads
         )
+        # print(f'alignments_config.threads:{alignments_config.threads}')
 
         # ✅ 传递两个参数，路径和has_insertion
         run_alignments(alignments_config, fasta_path, has_insertion_dict, poly_ins_list)
@@ -224,7 +226,6 @@ def run_all(vcf: str, ref: str, out: str, threads: int):
         # 获取genome metadata
         genome_metadata = parse_fasta_with_metadata(fasta_path)
         #print(f"meta: {genome_metadata}")
-        
         results = process_fasta_files(
             alignments_dir, 
             has_insertion_dict, 
@@ -236,7 +237,9 @@ def run_all(vcf: str, ref: str, out: str, threads: int):
 
         save_kmer_results_to_csv(results, intermediate_csv)
         process_comparison_results(intermediate_csv, processed_csv) # 用于处理未成功比对的seq
-        process_and_merge_results(processed_csv, final_csv)
+        ####### 限速步骤，merge步骤
+        process_and_merge_results(processed_csv, final_csv, threads) 
+
         click.echo(f"K-mer processing completed. Results saved in {final_csv}")
 
         click.echo("Step 4: Converting to VCF format and Generating matrix...")
