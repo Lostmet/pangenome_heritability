@@ -453,10 +453,9 @@ def process_diff_array(input_csv: str, output_dir: str):
         #if group_name not in group_meta_pos:
             #group_meta_pos[group_name] = meta_pos_value
 
-        if diff_array != [1]:
-            if group_name not in group_dict:
-                group_dict[group_name] = []
-            group_dict[group_name].append((seq_id, diff_array))
+        if group_name not in group_dict:
+            group_dict[group_name] = []
+        group_dict[group_name].append((seq_id, diff_array))
 
     for group_name, data in group_dict.items():
         seq_ids = [item[0] for item in data]
@@ -710,14 +709,19 @@ def convert_gt(value):
     except:
         return "./."  # 遇到异常情况时填充缺失数据
 
-def extract_vcf_sample(input_csv: str, output_vcf: str, out: str):
+from tqdm import tqdm
+import pandas as pd
+import re
+
+def extract_vcf_sample(input_csv: str, output_gt: str, out: str):
     """ 从 rsv_meta.csv 解析 group_name，并提取 GT 样本数据 """
 
     df_meta = pd.read_csv(input_csv)
 
     gt_data = []
 
-    for index, row in df_meta.iterrows():
+    # 使用 tqdm 包裹 iterrows，显示进度条
+    for index, row in tqdm(df_meta.iterrows(), total=len(df_meta), desc="Generating rsv GT matrix"):
         group_name = row["group_name"]  # 例："Group_2_19_某pos_rSV1"
         match = re.match(r"Group_(\d+)_(\d+)_(\d+)_([rR][sS][vV]\d+)", group_name)
 
@@ -731,9 +735,8 @@ def extract_vcf_sample(input_csv: str, output_vcf: str, out: str):
         t_matrix_file = find_t_matrix_file(chrom, number, out)
 
         if not t_matrix_file:
-            print(f"⚠️ Warning: No matching T_matrix found for {group_name} (expected: Group_{chrom}_{number}_*_T_matrix.csv)")
-            continue
-
+            print(f"⚠️ Warning: No matching T matrix found for {group_name} (expected: Group_{chrom}_{number}_*_T_matrix.csv)")
+            print("GT matrix may can't match, please check")
         #print(f"✅ Found T_matrix file: {t_matrix_file} for {group_name}")
 
         # **读取 T_matrix**
@@ -751,9 +754,10 @@ def extract_vcf_sample(input_csv: str, output_vcf: str, out: str):
     gt_df = pd.DataFrame(gt_data)
 
     # **保存 VCF（无表头）**
-    gt_df.to_csv(output_vcf, index=False, header=False, sep="\t")
+    gt_df.to_csv(output_gt, index=False, header=False, sep="\t")
 
-    #print(f"✅ VCF GT 数据已保存至 {output_vcf}！")
+    #print(f"✅ VCF GT 数据已保存至 {output_gt}！")
+
 
 ########生成rsv
 
