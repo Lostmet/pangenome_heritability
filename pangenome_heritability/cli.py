@@ -1,5 +1,6 @@
 import click
 import shutil
+import time
 import sys
 import os
 import pandas as pd
@@ -183,19 +184,19 @@ def convert_to_plink_cmd(csv_file: str, vcf_file: str, output_dir: str):
 @click.option('--vcf', required=True, help='Input VCF file')
 @click.option('--ref', required=True, help='Reference FASTA file')
 @click.option('--out', required=True, help='Output directory')
-#@click.option('--window-size', default=1, type=int, help='K-mer window size (default: 4)')
 @click.option('--threads', default=10, type=int, help='Number of threads')
 
 def run_all(vcf: str, ref: str, out: str, threads: int):
     """Run the complete pipeline."""
     try:
+        start_time = time.time()
         click.echo("Step 1: Processing VCF and generating FASTA...")
         config = Config(vcf_file=vcf, ref_fasta=ref, output_dir=out, threads = threads)
         grouped_variants_list = process_variants(config)
         grouped_variants_dict = {}
         for group in grouped_variants_list:
             grouped_variants_dict.setdefault(group.chrom, []).append(group) # 得到{"1":[], "2":[]} chrom_number
-
+        click.echo("Overlapping variants have been grouped")
         #print(f'grouped_variants_dict:{grouped_variants_dict}')
 
         # ✅ 解包生成的输出，获取 fasta 文件路径和 has_insertion
@@ -233,6 +234,7 @@ def run_all(vcf: str, ref: str, out: str, threads: int):
             genome_metadata=genome_metadata,
             max_workers=threads
         )
+        click.echo("Kmers generated successfully")
         #print(f"results: {results}")
 
         save_kmer_results_to_csv(results, intermediate_csv)
@@ -271,6 +273,17 @@ def run_all(vcf: str, ref: str, out: str, threads: int):
         detect_abnormal(out)
 
         click.echo("All steps completed successfully!")
+        end_time = time.time()
+        # 计算总用时
+        total_time = end_time - start_time
+        
+        # 将总用时转换为小时、分钟、秒
+        hours = total_time // 3600  # 总小时数
+        minutes = (total_time % 3600) // 60  # 总分钟数
+        seconds = total_time % 60  # 剩余秒数
+        
+        # 格式化输出
+        print(f"Total time taken: {int(hours)}:{int(minutes):02d}:{int(seconds):02d}")
     except RuntimeError as e:
         click.echo(f"Error: {str(e)}", err=True)
         raise click.Abort()
