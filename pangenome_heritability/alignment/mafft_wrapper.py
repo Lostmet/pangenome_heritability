@@ -176,8 +176,8 @@ def run_alignments(config, fasta_file: str, has_insertion_dict: Dict[str, bool],
     # Customize tqdm format for simpler progress
     with ProcessPoolExecutor(max_workers=config.threads) as executor, tqdm(
         total=len(group_sequences),
-        desc="Processed Groups",
-        bar_format="{desc}: {n}/{total} groups"
+        desc="Processed Groups"#,
+        #bar_format="{desc}: {n}/{total} groups"
     ) as pbar:
         futures = {}
 
