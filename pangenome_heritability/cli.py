@@ -192,8 +192,9 @@ def run_all(vcf: str, ref: str, out: str, threads: int):
         start_time = time.time()
         click.echo("Step 1: Processing VCF and generating FASTA...")
         config = Config(vcf_file=vcf, ref_fasta=ref, output_dir=out, threads = threads)
-        grouped_variants_list, var_bp_all, var_bp_max, single_group, single_sv_count, multi_bp, multi_bp_max, percentage_sv_overlapped, variant_max= process_variants(config) # var_bp是ref-alt的绝对值之和，不考虑inv，只多不少
+        grouped_variants_list, var_bp_all, var_bp_max, single_sv_count, multi_bp, multi_bp_max, percentage_sv_overlapped, variant_max= process_variants(config) # var_bp是ref-alt的绝对值之和，不考虑inv，只多不少
         
+
         click.echo(f"Total base pairs to be processed: {var_bp_all:,}, max per variant: {var_bp_max:,}")
         # 用的最多的应该是实际用到的bp：multi_bp
         click.echo(f'Base pairs to be processed after grouping: {multi_bp:,}, max per variant: {multi_bp_max:,}')
