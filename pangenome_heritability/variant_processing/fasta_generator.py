@@ -3,18 +3,13 @@ from ..config import Config
 from .vcf_parser import VariantGroup, Variant
 import pysam
 from tqdm import tqdm
-
 import concurrent.futures
-from tqdm import tqdm
 
-def generate_fasta_sequences(config: Config, variant_groups: Dict[str, List[VariantGroup]]) -> Tuple[str, Dict[str, bool]]:
+def generate_fasta_sequences(config: Config, variant_groups: Dict[str, List[VariantGroup]], total_groups: int) -> Tuple[str, Dict[str, bool]]:
     output_fasta = f"{config.output_dir}/variants_extended.fasta"
     ref_genome = pysam.FastaFile(config.ref_fasta)
     has_insertion_dict = {}  # 记录Group是否包含Insertion
     poly_ins_list = []
-
-    # 计算所有组的总数，用于进度条的 total
-    total_groups = sum(len(groups) for groups in variant_groups.values())  # 所有组的总数
 
     # 定义用于处理单个组的辅助函数
     def process_group(chrom, i, group):
@@ -28,15 +23,18 @@ def generate_fasta_sequences(config: Config, variant_groups: Dict[str, List[Vari
 
         # 调整参考序列
         ref_seq_adjusted = adjust_reference_for_insertions(ref_seq, max_insertions)
-
+        seq_length = len(ref_seq_adjusted)
         # 处理变异并生成结果
         variant_results = []
+
         for variant in group.variants:
             var_seq, poly_ins = adjust_variants_for_insertions(ref_seq, max_insertions, variant, start)
             var_id = f"Variant_{chrom}_{i}_{variant.start}_{variant.end}"
             variant_results.append((var_id, var_seq, poly_ins))  # 保存变异的ID，序列和poly_ins信息
 
-        return chrom, i, group, ref_seq_adjusted, variant_results  # 返回所有必要信息
+        bp_to_process = (len(group.variants) + 1)*seq_length # 计算该组的bp和
+
+        return chrom, i, group, ref_seq_adjusted, variant_results, bp_to_process  # 返回所有必要信息
 
     # 启动并行处理
     try:
@@ -50,11 +48,11 @@ def generate_fasta_sequences(config: Config, variant_groups: Dict[str, List[Vari
                             futures.append(executor.submit(process_group, chrom, i, group))
 
                     seen = set()  # 用来记录已经出现过的字典
-
+                    group_bp_all = 0 # 用来记录所有组需要处理的bp和
                     # 处理每个已完成的任务
                     for future in concurrent.futures.as_completed(futures):
-                        chrom, i, group, ref_seq_adjusted, variant_results = future.result()
-
+                        chrom, i, group, ref_seq_adjusted, variant_results, group_bp = future.result()
+                        group_bp_all += group_bp
                         # 写入参考序列
                         fasta_out.write(f">Group_{chrom}_{i}_{group.start}\n{ref_seq_adjusted}\n")
 
@@ -72,11 +70,10 @@ def generate_fasta_sequences(config: Config, variant_groups: Dict[str, List[Vari
                         # 更新进度条
                         pbar.update(1)  # 每处理一个组，进度条更新一次
 
-        return output_fasta, has_insertion_dict, poly_ins_list  # 返回Group是否包含Insertion信息，还有poly_ins信息
+        return output_fasta, has_insertion_dict, poly_ins_list, group_bp_all  # 返回Group是否包含Insertion信息，还有poly_ins信息
 
     finally:
         ref_genome.close()  # 关闭参考基因组文件
-        # print(f'预比对输入threads:{config.threads}')
 
 
 def get_max_insertions(variants: List[Variant], start: int) -> Tuple[Dict[int, int], bool]:
