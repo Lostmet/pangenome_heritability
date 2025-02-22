@@ -70,7 +70,7 @@ def generate_fasta_sequences(config: Config, variant_groups: Dict[str, List[Vari
                         # 更新进度条
                         pbar.update(1)  # 每处理一个组，进度条更新一次
 
-        return output_fasta, has_insertion_dict, poly_ins_list, group_bp_all  # 返回Group是否包含Insertion信息，还有poly_ins信息
+        return output_fasta, has_insertion_dict, poly_ins_list # 返回Group是否包含Insertion信息，还有poly_ins信息
 
     finally:
         ref_genome.close()  # 关闭参考基因组文件
