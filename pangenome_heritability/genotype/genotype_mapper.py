@@ -717,9 +717,9 @@ def extract_vcf_sample(input_csv: str, output_gt: str, out: str):
     """ 从 rsv_meta.csv 解析 group_name，并提取 GT 样本数据 """
 
     df_meta = pd.read_csv(input_csv)
-
+    total = len(df_meta)
     gt_data = []
-
+    print(f'Count of rSVs: {total}')
     # 使用 tqdm 包裹 iterrows，显示进度条
     for index, row in tqdm(df_meta.iterrows(), total=len(df_meta), desc="Generating rsv GT matrix"):
         group_name = row["group_name"]  # 例："Group_2_19_某pos_rSV1"
