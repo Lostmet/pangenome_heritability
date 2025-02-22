@@ -192,17 +192,37 @@ def run_all(vcf: str, ref: str, out: str, threads: int):
         start_time = time.time()
         click.echo("Step 1: Processing VCF and generating FASTA...")
         config = Config(vcf_file=vcf, ref_fasta=ref, output_dir=out, threads = threads)
-        grouped_variants_list = process_variants(config)
+        grouped_variants_list, var_bp_all, var_bp_max, single_group, single_sv_count, multi_bp, multi_bp_max, percentage_sv_overlapped, variant_max= process_variants(config) # var_bp是ref-alt的绝对值之和，不考虑inv，只多不少
+        
+        click.echo(f"Total base pairs to be processed: {var_bp_all:,}, max per variant: {var_bp_max:,}")
+        # 用的最多的应该是实际用到的bp：multi_bp
+        click.echo(f'Base pairs to be processed after grouping: {multi_bp:,}, max per variant: {multi_bp_max:,}')
+        # 输出一下variant_max
+        click.echo(f'Max variant: chromosome = {variant_max.chrom}, position = {variant_max.start:,}')
+        # 输出一下有多少SV是没重叠的
+        click.echo(f'{single_sv_count:,} SVs excluded due to no overlap')
+        # 输出重叠的SV占所有的SV的比例
+        click.echo(f'Percentage of overlapping SVs: {percentage_sv_overlapped:.2f}%')
+        # 粗略估算预计用时
+        # 将总用时转换为小时、分钟、秒
+        est_time = multi_bp / 5000
+        hours = est_time // 3600  # 总小时数
+        minutes = (est_time % 3600) // 60  # 总分钟数
+        # 格式化输出
+        click.echo(f"Estimated time required: {int(hours)}:{int(minutes):02d}:00")
+
         grouped_variants_dict = {}
         for group in grouped_variants_list:
             grouped_variants_dict.setdefault(group.chrom, []).append(group) # 得到{"1":[], "2":[]} chrom_number
-        click.echo("Overlapping variants have been grouped")
+        total_groups = sum(len(groups) for groups in grouped_variants_dict.values()) 
+        click.echo(f"Overlapping variants have been grouped, Group count: {total_groups:,}")
         #print(f'grouped_variants_dict:{grouped_variants_dict}')
 
         # ✅ 解包生成的输出，获取 fasta 文件路径和 has_insertion
-        fasta_path, has_insertion_dict, poly_ins_list = generate_fasta_sequences(config, grouped_variants_dict)
+        fasta_path, has_insertion_dict, poly_ins_list = generate_fasta_sequences(config, grouped_variants_dict, total_groups)
         #print(f"打印一下list：{poly_ins_list}，还有dict：{has_insertion_dict}")
         click.echo(f"FASTA file generated: {fasta_path}")
+
 
         click.echo("Step 2: Running alignments...")
         alignments_config = Config(
@@ -226,16 +246,15 @@ def run_all(vcf: str, ref: str, out: str, threads: int):
         
         # 获取genome metadata
         genome_metadata = parse_fasta_with_metadata(fasta_path)
-        #print(f"meta: {genome_metadata}")
+        # print(f"meta: {genome_metadata}")
         results = process_fasta_files(
             alignments_dir, 
             has_insertion_dict, 
-        # 传入has_insertion_dict:{'Group_2_1_906668': True, 'Group_2_2_906670': True, 'Group_2_3_906736': False}
+         #传入has_insertion_dict:{'Group_2_1_906668': True, 'Group_2_2_906670': True, 'Group_2_3_906736': False}
             genome_metadata=genome_metadata,
             max_workers=threads
         )
         click.echo("Kmers generated successfully")
-        #print(f"results: {results}")
 
         save_kmer_results_to_csv(results, intermediate_csv)
         process_comparison_results(intermediate_csv, processed_csv) # 用于处理未成功比对的seq
@@ -245,13 +264,14 @@ def run_all(vcf: str, ref: str, out: str, threads: int):
         click.echo(f"K-mer processing completed. Results saved in {final_csv}")
 
         click.echo("Step 4: Converting to VCF format and Generating matrix...")
-        #vcf_prefix = os.path.join(out, "pangenome")
-        #csv_data = pd.read_csv(final_csv)
+        click.echo("1. Generating D matrix...")
         # Step 1: 处理 diff_array，生成 D_matrix
         process_diff_array(final_csv, out)
         # Step 2: 读取 VCF，生成 X_matrix，并且储存sample_names
+        click.echo("2. Generating X matrix...")
         sample_names = process_vcf_to_x_matrix(vcf, out)
         # Step 3: 计算 T_matrix
+        click.echo("3. Generating T matrix...")
         compute_t_matrix(out)
 
         click.echo("D, X, T matrix generated")
@@ -261,6 +281,7 @@ def run_all(vcf: str, ref: str, out: str, threads: int):
         gt_matrix = os.path.join(out, "GT_matrix.csv")
         output_vcf = os.path.join(out, "output.vcf")
         rsv_vcf = os.path.join(out, "pangenome_rsv.vcf")
+        click.echo("4. Generating GT matrix and VCF files...")
         extract_vcf_sample(rsv_meta_csv, gt_matrix, out)#生成gt_matrix，用于填充vcf的GT
         #扔进去sample_names用于生成vcf
         vcf_generate(sample_names, rsv_meta_csv, output_vcf, gt_matrix, rsv_vcf)#最终生成rsv.vcf
