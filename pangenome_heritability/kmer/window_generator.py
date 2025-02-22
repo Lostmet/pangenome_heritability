@@ -10,7 +10,6 @@ from typing import List, Dict, Tuple, Optional
 from dataclasses import dataclass
 from collections import defaultdict
 
-
 from ..utils.logging_utils import get_logger
 logger = get_logger(__name__)
 
@@ -442,7 +441,9 @@ def process_fasta_files(
                 for file_name, sequences in fasta_contents.items()
             }
             
-            for future in tqdm(as_completed(futures), total=len(futures), desc="Generating kmers", bar_format="{desc}: {n_fmt}/{total_fmt} groups"):
+            for future in tqdm(as_completed(futures), total=len(futures), desc="Generating kmers"\
+                               #, bar_format="{desc}: {n_fmt}/{total_fmt} groups"
+                               ):
                 result = future.result()
                 if result['error']:
                     errors.append(f"Error in {result['file_name']}: {result['error']}")
@@ -530,10 +531,6 @@ def retain_changed_columns_group_with_index(rows: List[List[int]]) -> Tuple[List
 
 
 
-from concurrent.futures import ThreadPoolExecutor, as_completed
-import pandas as pd
-from tqdm import tqdm
-
 def process_group(chrom, group):
     """
     处理每个chrom的组，返回处理结果。
@@ -611,8 +608,8 @@ def process_and_merge_results(input_csv: str, output_csv: str, threads: str):
         
         # 使用进度条
         with tqdm(total=total_groups, desc="Merging kmers", unit="group") as pbar:
-            # 使用ThreadPoolExecutor来并行处理每个组
-            with ThreadPoolExecutor(max_workers=threads) as executor:
+            # 使用ProcessPoolExecutor来并行处理每个组
+            with ProcessPoolExecutor(max_workers=threads) as executor:
                 future_to_group = {executor.submit(process_group, chrom, group): chrom for chrom, group in grouped}
                 
                 # 遍历每个任务的结果
