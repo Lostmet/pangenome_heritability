@@ -2,7 +2,7 @@ import pysam
 from typing import Dict, List, Tuple
 from dataclasses import dataclass
 from tqdm import tqdm
-
+import os
 from ..exceptions import InputError
 from ..utils.logging_utils import get_logger
 
@@ -96,7 +96,7 @@ def process_variants(config) -> List[VariantGroup]:
     logger.info("Sorting variants by chromosome (natural order) and start position...")
     # Sort by parsed chromosome value, then by start coordinate
     all_variants.sort(key=lambda v: (parse_chrom(v.chrom), v.start))
-    
+    # 筛选出所有vcf的variants后续准备进行group的判断
     logger.info("Grouping sorted variants...")
     variant_groups = []
     current_group = None
@@ -149,8 +149,35 @@ def process_variants(config) -> List[VariantGroup]:
                     multi_var_bp_max = multi_var_bp
                     variant_max = variant
                 
-    
-    percentage_sv_overlapped = (1- single_sv_count/variant_count)*100
-    # print(f'multi_group1:{multi_group[1].__dict__}')
+    percentage_sv_overlapped = (1- single_sv_count/variant_count)*100 # 给到一个重叠的SV的百分比
+
+    # 输出未重叠的vcf文件
+    print('Generating SVs no overlapped...')
+    filter_vcf(config, single_group)    
+    # print(f'single_group1:{single_group[0].__dict__}')
     # multi group，var未group的bp，single group，single_sv_count，multi后的var_bp，和max
-    return multi_group, var_bp_all, var_bp_max, single_group, single_sv_count, multi_var_bp_all, multi_var_bp_max, percentage_sv_overlapped, variant_max
+    return multi_group, var_bp_all, var_bp_max, single_sv_count, multi_var_bp_all, multi_var_bp_max, percentage_sv_overlapped, variant_max
+
+
+def filter_vcf(config, single_group):
+    # 打开输入VCF文件和输出VCF文件
+    nvcf_name = "pangenome_nSV.vcf"
+    output_vcf = os.path.join(config.output_dir, nvcf_name)
+    
+    # 打开VCF文件进行读取和写入
+    with pysam.VariantFile(config.vcf_file, "r") as vcf_in, pysam.VariantFile(output_vcf, "w", header=vcf_in.header) as vcf_out:
+        # 使用 tqdm 进度条遍历 single_group
+        for i in tqdm(range(len(single_group)), desc="Generating nSV: "):
+            variant = single_group[i].variants[0]
+            chrom = variant.chrom
+            pos = variant.start
+            
+            # 顺序遍历 VCF 文件
+            for rec in vcf_in.fetch(chrom, pos, pos + 1):  # fetch 从染色体的指定位置获取
+                # 如果找到匹配的变异
+                if rec.pos == pos:
+                    vcf_out.write(rec)
+                    break  # 找到并写入后，跳出 fetch 循环，处理下一个变异
+            
+    print(f"SVs with no overlapped saved as {nvcf_name}")
+
