@@ -72,6 +72,8 @@ def process_variants(config) -> List[VariantGroup]:
     logger.info("Reading variants from VCF...")
     with tqdm(desc="Reading variants") as pbar:
         try:
+            var_bp_all = 0
+            var_bp_max = 0
             for record in vcf.fetch():
                 variant = Variant(
                     chrom=record.chrom,
@@ -81,6 +83,9 @@ def process_variants(config) -> List[VariantGroup]:
                     alt=list(record.alts),
                     samples={s: record.samples[s]['GT'] for s in record.samples}
                 )
+                var_bp = abs(len(variant.ref)-len(variant.alt[0]))
+                var_bp_max = max(var_bp_max, var_bp)
+                var_bp_all += var_bp # 暂时不管inv
                 all_variants.append(variant)
                 pbar.update(1)
         except Exception as e:
@@ -95,8 +100,8 @@ def process_variants(config) -> List[VariantGroup]:
     logger.info("Grouping sorted variants...")
     variant_groups = []
     current_group = None
-    
-    with tqdm(desc="Grouping variants", total=len(all_variants)) as pbar:
+    variant_count = len(all_variants)
+    with tqdm(desc="Grouping variants", total=variant_count) as pbar:
         for variant in all_variants:
             if current_group is None:
                 # First variant
@@ -112,7 +117,7 @@ def process_variants(config) -> List[VariantGroup]:
                 else:
                     # Still in the same group
                     current_group.add_variant(variant)
-            
+
             pbar.update(1)
         
         # Add the last group if it exists
@@ -120,4 +125,32 @@ def process_variants(config) -> List[VariantGroup]:
             variant_groups.append(current_group)
     
     logger.info(f"Processed {len(variant_groups)} variant groups")
-    return variant_groups
+
+    single_group = []
+    multi_group = []
+    multi_var_bp = 0
+    multi_var_bp_max = 0
+    single_sv_count = 0
+    multi_var_bp_all = 0
+    ### multi_group1:{'chrom': '2', 'variants': [Variant(chrom='2', start=906670, end=906670, ref='A', alt=['ATATATATATATA'], samples={'SL001_SL001':
+    for i in range(len(variant_groups)):
+        if len(variant_groups[i].variants) == 1:
+            single_group.append(variant_groups[i])
+            single_sv_count += 1
+        else:
+            multi_group.append(variant_groups[i])
+            for n in range(len(variant_groups[i].variants)):
+                variant = variant_groups[i].variants[n]
+                ref_bp = len(variant.ref)
+                alt_bp = len(variant.alt[0])
+                multi_var_bp = abs(ref_bp - alt_bp)
+                multi_var_bp_all += multi_var_bp
+                if multi_var_bp_max < multi_var_bp:
+                    multi_var_bp_max = multi_var_bp
+                    variant_max = variant
+                
+    
+    percentage_sv_overlapped = (1- single_sv_count/variant_count)*100
+    # print(f'multi_group1:{multi_group[1].__dict__}')
+    # multi group，var未group的bp，single group，single_sv_count，multi后的var_bp，和max
+    return multi_group, var_bp_all, var_bp_max, single_group, single_sv_count, multi_var_bp_all, multi_var_bp_max, percentage_sv_overlapped, variant_max
