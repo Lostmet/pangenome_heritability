@@ -188,9 +188,9 @@ def compare_kmers_with_meta(ref_windows: List[Dict], var_windows: List[Dict]) ->
     diff_array = []
     meta_array = []
 
-    for i in range(length - 1): # 去掉对第一个的比对
-        ref = ref_windows[i + 1]
-        var = var_windows[i + 1]
+    for i in range(length): # 恢复对第一个的比对
+        ref = ref_windows[i]
+        var = var_windows[i]
         
         
         diff_val = 0 if ref["kmer"] == var["kmer"] else 1
@@ -242,157 +242,53 @@ def process_sequences(file_name: str, sequences: List[Tuple[str, str]], genome_m
        
         group_name = file_name.replace('_aligned.fasta', '').replace('_input.fasta', '')
 
-        if not has_insertion_dict[group_name]:
-            #print(f'成功通过该检查点，也就是not false, group为{group_name}')
+        group_metadata = genome_metadata.get(group_name)
+        #print(f"group_metadata: {group_metadata}")
+        if not group_metadata:
+            raise ValueError(f"Group {group_name} not found in genome metadata")
+        
+        results = []
+        reference_seq = None
+        reference_id = None            
+    
+        for seq_id, sequence in sequences:
+            if seq_id.startswith('ref_') or seq_id == 'reference':
+                reference_seq = sequence
+                reference_id = seq_id
+                break            
+        
+        if not reference_seq:
+            reference_seq = sequences[0][1] 
+            reference_id = sequences[0][0]            
+        
+        start_pos = group_metadata["variants"][0]["start"] if group_metadata["variants"] else 0
+        
+        # ref_windows：[{'pos': 906668, 'kmer': 'T'}, {'pos': 906669, 'kmer': '-'}]
+        ref_windows = kmer_window_meta(reference_seq, start_pos)
+        #print(f"ref_windows: {ref_windows}")
+        number = 1
+        for seq_id, sequence in sequences:
+            if seq_id == reference_id:
+                continue  
+                
+            var_windows = kmer_window_meta(sequence, start_pos)
+            #print(f'var_windows: {type(var_windows)}')
+            number += 1
+            # 在这里进行逐个比对
+            diff_array, meta_array = compare_kmers_with_meta(ref_windows, var_windows)                
+            results.append({
+                'chromosome_group': group_name,
+                'sequence_id': seq_id,
+                'diff_array': diff_array,
+                'meta_array': meta_array
+            })
 
-            # 对未重叠组的操作，似乎是冗余的，未重叠组只需要保留就可以了，不过多一个检索也不是问题，但是没必要接着做
-            if len(sequences) == 2 and sequences[0][0] == 'seq0' and sequences[1][0] == 'seq1':
-                ref_seq = sequences[0][1]  # seq0
-                var_seq = sequences[1][1]  # seq1
-            
-                group_metadata = genome_metadata.get(group_name)
-                if not group_metadata or not group_metadata["variants"]:
-                    logger.warning(f"No metadata found for group {group_name}")
-                    start_pos = 0
-                else:
-                    start_pos = group_metadata["variants"][0]["start"]
-                
-                diff_array = []
-                meta_array = []                
-                
-                for i in range(len(ref_seq)):
-                    ref_kmer = ref_seq[i:i+1]
-                    var_kmer = var_seq[i:i+1]                    
-                    
-                    diff_array.append(1)                   
-                    
-                    meta_array.append({
-                        'pos': start_pos + i,
-                        'ref': ref_kmer,  
-                        'alt': var_kmer  
-                    })
-                
-                return {
-                    'file_name': file_name,
-                    'results': [{
-                        'chromosome_group': group_name,
-                        'sequence_id': 'seq1',
-                        'diff_array': diff_array,
-                        'meta_array': meta_array
-                    }],
-                    'error': None
-                }
-            
+        return {
+            'file_name': file_name,
+            'results': results,
+            'error': None
+        }
         
-            group_metadata = genome_metadata.get(group_name)
-            #print(f"group_metadata: {group_metadata}")
-            if not group_metadata:
-                raise ValueError(f"Group {group_name} not found in genome metadata")
-            
-            results = []
-            reference_seq = None
-            reference_id = None            
-        
-            for seq_id, sequence in sequences:
-                if seq_id.startswith('ref_') or seq_id == 'reference':
-                    reference_seq = sequence
-                    reference_id = seq_id
-                    break            
-            
-            if not reference_seq:
-                reference_seq = sequences[0][1] 
-                reference_id = sequences[0][0]            
-            
-            start_pos = group_metadata["variants"][0]["start"] if group_metadata["variants"] else 0
-            
-            # ref_windows：[{'pos': 906668, 'kmer': 'T'}, {'pos': 906669, 'kmer': '-'}]
-            ref_windows = kmer_window_meta(reference_seq, start_pos)
-            #print(f"ref_windows: {ref_windows}")
-            number = 1
-            for seq_id, sequence in sequences:
-                if seq_id == reference_id:
-                    continue  
-                    
-                var_windows = kmer_window_meta(sequence, start_pos)
-                #print(f'var_windows: {type(var_windows)}')
-                number += 1
-                # 在这里进行逐个比对
-                diff_array, meta_array = compare_kmers_with_meta(ref_windows, var_windows)                
-                results.append({
-                    'chromosome_group': group_name,
-                    'sequence_id': seq_id,
-                    'diff_array': diff_array,
-                    'meta_array': meta_array
-                })
-            #print(f"all_kmer:{all_kmer}")
-            #diff_array_test = compare_kmers_all(all_kmer, number) #写一个新函数
-
-            #print(f'results:{results}')
-            return {
-                'file_name': file_name,
-                'results': results,
-                'error': None
-            }
-        
-        else: # 对含poly_ins的组进行单独处理，是一定有seq2的
-            #print(f'含poly_ins，group为{group_name}')
-            
-            group_metadata = genome_metadata.get(group_name)
-            #print(f"group_metadata: {group_metadata}")
-            if not group_metadata:
-                raise ValueError(f"Group {group_name} not found in genome metadata")
-            
-            results = []
-            reference_seq = None
-            reference_id = None
-            
-        
-            for seq_id, sequence in sequences:
-                if seq_id.startswith('ref_') or seq_id == 'reference':
-                    reference_seq = sequence
-                    reference_id = seq_id
-                    break           
-            
-            if not reference_seq:
-                reference_seq = sequences[0][1] 
-                reference_id = sequences[0][0]
-            
-            
-            start_pos = group_metadata["variants"][0]["start"] if group_metadata["variants"] else 0
-            
-            # ref_windows：[{'pos': 906668, 'kmer': 'T'}, {'pos': 906669, 'kmer': '-'}]
-            ref_windows = kmer_window_meta(reference_seq, start_pos)
-            #print(f"ref_windows: {ref_windows}")
-            #这边我加一个储存所有kmer的字典, 键：ref_windows, var_windows1,2,3,4...
-            all_kmer = {} 
-            all_kmer['ref_windows'] = ref_windows
-            number = 1
-            for seq_id, sequence in sequences:
-                if seq_id == reference_id:
-                    continue  
-                    
-                var_windows = kmer_window_meta(sequence, start_pos)
-                #print(f'var_windows: {type(var_windows)}')
-                all_kmer[f'var_windows_{number}'] = var_windows
-                number += 1
-                # 在这里进行逐个比对,得改成凑一组全部比对才对
-                diff_array, meta_array = compare_kmers_with_meta(ref_windows, var_windows)
-                
-                results.append({
-                    'chromosome_group': group_name,
-                    'sequence_id': seq_id,
-                    'diff_array': diff_array,
-                    'meta_array': meta_array
-                })
-            #print(f"all_kmer:{all_kmer}")
-            #diff_array_test = compare_kmers_all(all_kmer, number) #写一个新函数
-
-            #print(f'results:{results}')
-            return {
-                'file_name': file_name,
-                'results': results,
-                'error': None
-            }
     except Exception as e:
         logger.error(f"Error processing sequences in {file_name}: {str(e)}")
         return {'file_name': file_name, 'results': [], 'error': str(e)}
@@ -607,7 +503,7 @@ def process_and_merge_results(input_csv: str, output_csv: str, threads: str):
         merged_results = []
         
         # 使用进度条
-        with tqdm(total=total_groups, desc="Merging kmers", unit="group") as pbar:
+        with tqdm(total=total_groups, desc="c. Merging kmers", unit="group") as pbar:
             # 使用ProcessPoolExecutor来并行处理每个组
             with ProcessPoolExecutor(max_workers=threads) as executor:
                 future_to_group = {executor.submit(process_group, chrom, group): chrom for chrom, group in grouped}
