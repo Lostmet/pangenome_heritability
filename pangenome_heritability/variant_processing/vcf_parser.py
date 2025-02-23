@@ -132,6 +132,7 @@ def process_variants(config) -> List[VariantGroup]:
     multi_var_bp_max = 0
     single_sv_count = 0
     multi_var_bp_all = 0
+    variant_max = 0
     ### multi_group1:{'chrom': '2', 'variants': [Variant(chrom='2', start=906670, end=906670, ref='A', alt=['ATATATATATATA'], samples={'SL001_SL001':
     for i in range(len(variant_groups)):
         if len(variant_groups[i].variants) == 1:
@@ -150,34 +151,42 @@ def process_variants(config) -> List[VariantGroup]:
                     variant_max = variant
                 
     percentage_sv_overlapped = (1- single_sv_count/variant_count)*100 # 给到一个重叠的SV的百分比
-
-    # 输出未重叠的vcf文件
-    print('Generating SVs no overlapped...')
-    filter_vcf(config, single_group)    
+  
     # print(f'single_group1:{single_group[0].__dict__}')
     # multi group，var未group的bp，single group，single_sv_count，multi后的var_bp，和max
-    return multi_group, var_bp_all, var_bp_max, single_sv_count, multi_var_bp_all, multi_var_bp_max, percentage_sv_overlapped, variant_max
+    return multi_group, var_bp_all, var_bp_max, single_sv_count, multi_var_bp_all, multi_var_bp_max, percentage_sv_overlapped, variant_max, single_group
 
+import pysam
+import os
+from tqdm import tqdm
 
 def filter_vcf(config, single_group):
-    # 打开输入VCF文件和输出VCF文件
     nvcf_name = "pangenome_nSV.vcf"
     output_vcf = os.path.join(config.output_dir, nvcf_name)
     
-    # 打开VCF文件进行读取和写入
-    with pysam.VariantFile(config.vcf_file, "r") as vcf_in, pysam.VariantFile(output_vcf, "w", header=vcf_in.header) as vcf_out:
-        # 使用 tqdm 进度条遍历 single_group
-        for i in tqdm(range(len(single_group)), desc="Generating nSV: "):
-            variant = single_group[i].variants[0]
-            chrom = variant.chrom
-            pos = variant.start
-            
-            # 顺序遍历 VCF 文件
-            for rec in vcf_in.fetch(chrom, pos, pos + 1):  # fetch 从染色体的指定位置获取
-                # 如果找到匹配的变异
-                if rec.pos == pos:
-                    vcf_out.write(rec)
-                    break  # 找到并写入后，跳出 fetch 循环，处理下一个变异
-            
+    # 读取输入文件的header信息
+    with pysam.VariantFile(config.vcf_file, "r") as vcf_in:
+        header_text = str(vcf_in.header)
+    
+    # 手动写入header到输出文件
+    with open(output_vcf, "w") as f_out:
+        f_out.write(header_text)
+        
+        # 重新打开输入文件遍历记录
+        with pysam.VariantFile(config.vcf_file, "r") as vcf_in:
+            for i in tqdm(range(len(single_group)), desc="Generating nSV: "):
+                variant = single_group[i].variants[0]
+                chrom, pos = variant.chrom, variant.start
+                
+                # 在染色体范围内搜索匹配位置的记录
+                for rec in vcf_in.fetch(chrom, pos, pos + 1):
+                    if rec.pos == pos:
+                        # 转换为标准VCF行并写入
+                        vcf_line = str(rec).strip()  # 去除前后空白
+                        f_out.write(vcf_line + '\n')  # 确保换行符一致性
+                        break
+    
     print(f"SVs with no overlapped saved as {nvcf_name}")
+
+
 
