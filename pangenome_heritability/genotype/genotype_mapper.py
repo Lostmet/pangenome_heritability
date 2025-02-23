@@ -199,7 +199,7 @@ def create_vcf_file(csv_data: pd.DataFrame, vcf_file: str, grouped_variants: str
     # Create output files for SV and rSV
     output_files = {
         #'SV': f"{output_prefix}.sv.vcf"#,
-        'rSV': f"{output_prefix}.rsv.vcf"
+        'rSV': f"{output_prefix}.rSV.vcf"
     }
     
     # Extract variant data from VCF
@@ -440,22 +440,14 @@ def process_diff_array(input_csv: str, output_dir: str):
         except json.JSONDecodeError:
             print(f"Error decoding diff_array for {group_name}. Skipping this row.")
             continue
-        '''       
-        try:
-            meta_array = json.loads(meta_array_str.replace("'", "\""))
-            if isinstance(meta_array, list) and len(meta_array) > 0:
-                meta_pos_value = meta_array[0].get('pos', 'unknown')
-            else:
-                meta_pos_value = 'unknown'
-        except json.JSONDecodeError:
-            meta_pos_value = 'unknown'
-        ''' 
+
         #if group_name not in group_meta_pos:
             #group_meta_pos[group_name] = meta_pos_value
 
         if group_name not in group_dict:
             group_dict[group_name] = []
-        group_dict[group_name].append((seq_id, diff_array))
+        # print(f'diff:{diff_array}')
+        group_dict[group_name].append((seq_id, diff_array[1:])) # 去掉diff_array第一项
 
     for group_name, data in group_dict.items():
         seq_ids = [item[0] for item in data]
@@ -616,60 +608,128 @@ def compute_t_matrix(output_dir: str):
         t_df.to_csv(t_matrix_file, index=True, header=True)
         #print(f"Saved T matrix: {t_matrix_file}")
 
-def save_rsv_meta(input: str, output:str):
+def save_rSV_meta(input: str, output:str, threads: int):
     # 读取原始CSV文件
     df = pd.read_csv(input)
-
-    # 找到第一列中重复的项，并保留所有重复项
+    # 找到第一列中重复的项并保留所有重复项
     df = df[df.duplicated(subset=df.columns[0], keep=False)]
-
-    #print("删除唯一项并保留重复项成功！")
-
-    # 定义一个集合来存储所有提取的meta_array数据（使用集合去除重复项）
+    # 定义集合存储提取的元数据
     extracted_meta_data = set()
-    # **只遍历包含 'seq1' 的行**
-    df_filtered = df[df[df.columns[1]] == 'seq1']  # 过滤出第二列为 'seq1' 的行
-    # 遍历所有行
-    for index, row in df_filtered.iterrows():
-        group_name = row[df_filtered.columns[0]]
-        
-        # 解析 diff_array 和 meta_array
-        diff_array = ast.literal_eval(row['diff_array'])
-        meta_array = ast.literal_eval(row['meta_array'])
-        
-        # 遍历 diff_array，找到值为 1 的位置，提取对应的 meta_array
-        for i in range(len(diff_array)):
-            extracted_meta_data.add((group_name, str(meta_array[i])))
 
-    # 将提取的 meta_array 数据转换为列表
+    # 对meta_array列进行处理
+    for i, row in df.iterrows():
+        # 将字符串转换为列表
+        meta_list = ast.literal_eval(row['meta_array'])
+        
+        # 循环从第二个元素开始修改
+        for j in range(1, len(meta_list)):
+            # 获取前一个元素的ref的最后一个字符
+            prev_ref_last_char = meta_list[j-1]['ref'][-1]
+            
+            # 更新当前元素的pos, ref, alt
+            meta_list[j]['pos'] -= 1
+            meta_list[j]['ref'] = prev_ref_last_char + meta_list[j]['ref']
+            meta_list[j]['alt'] = prev_ref_last_char + meta_list[j]['alt']
+        
+        # 更新DataFrame中的meta_array列为修改后的结果
+        df.at[i, 'meta_array'] = str(meta_list)
+    
+    # 按group分组处理数据
+    grouped = df.groupby(df.columns[0])
+    for group_name, group_df in grouped:
+        diff_arrays = []
+        meta_arrays = []
+        # 收集当前group所有seq的diff和meta
+        for _, row in group_df.iterrows():
+            try:
+                diff = ast.literal_eval(row['diff_array'])
+                meta = ast.literal_eval(row['meta_array'])
+                diff_arrays.append(diff)
+                meta_arrays.append(meta)
+            except:
+                continue
+        
+        # 确保存在有效数据并确定数组长度
+        if len(diff_arrays) == 0:
+            continue
+        num_positions = len(diff_arrays[0])
+        
+        # 遍历每个位置（基因位点）
+        for i in range(num_positions):
+            # 检查该位置是否在任何seq中有diff=1
+            for seq_idx in range(len(diff_arrays)):
+                if diff_arrays[seq_idx][i] == 1:
+                    # 选择第一个有效meta并去重
+                    extracted_meta_data.add((group_name, str(meta_arrays[seq_idx][i])))
+                    break  # 找到第一个有效的即可
+    
+    # 数据结构转换与预处理
     meta_list = [(group, ast.literal_eval(item)) for group, item in extracted_meta_data]
-
-    # 按照 pos 字段排序
-    meta_list.sort(key=lambda x: x[1]['pos'])
-
-    # 创建 DataFrame
+    
+    # 排序，先利用染色体，再用组别号，再用pos号
+    meta_list.sort(key=lambda x: (int(x[0].split('_')[1]), int(x[0].split('_')[2]), x[1]['pos']))
+    #print(meta_list)
+    # 创建DataFrame
     final_data = pd.DataFrame(meta_list, columns=["group_name", "meta_array"])
+    
+    # 这里插入代码进行并行处理
+    from concurrent.futures import ThreadPoolExecutor
 
     # 去重处理
-    final_data['meta_array_str'] = final_data['meta_array'].apply(lambda x: str(x))
-    final_data.drop_duplicates(subset=['meta_array_str'], inplace=True)
+    final_data = final_data.drop_duplicates(subset=["meta_array"])
+    ##### 在这里进行ref, pos, alt的转换
+    
+    grouped_final_data = final_data.groupby(final_data.columns[0])
 
-    # 删除辅助列
-    final_data.drop(columns=['meta_array_str'], inplace=True)
+    # 定义处理函数，用于每个group_name的计算
+    def rSV_info_modify(group_df):
+        meta_arrays = []  # 存旧的
+        ins = 0  # 这必须是我的神来之笔
+        for _, row in group_df.iterrows():
+            meta = row['meta_array']
+            meta_arrays.append(meta)
+        
+        for i in range(len(meta_arrays)):  # 按照顺序处理refaltpos
+            ref = meta_arrays[i]['ref']
+            alt = meta_arrays[i]['alt']
+            pos = meta_arrays[i]['pos']
+            if ref[-1] == "-" and alt[0] != "-":
+                pos -= ins
+                ins += len(ref) - 1  # 给这个insertion对后面的进行清理
+                ref = ref[0]  # ref的占位符去除
+            elif alt[0] == "-" and alt[1] != "-": # poly_ins特有的'ref': '-----------', 'alt': '-TATATATATA'}"
+                pos -= ins
+                ins += len(ref) - 1
+                ref = meta_arrays[i-1]['ref'][0] # ref=上一个的ref的第一位
+                alt = meta_arrays[i-1]['ref'][0] + alt[1:]
+            elif ref[0] == "-":  # 因为前面是insertion导致受损的变异
+                pos -= ins
+                ref = meta_arrays[i-1]['ref'][0] + ref[1:]
+                alt = meta_arrays[i-1]['ref'][0]
+            else:  # 不然就是deletion了，直接保留第一位就行
+                pos -= ins
+                alt = alt[0]
+            meta_arrays[i]['ref'] = ref  # 倒反天罡替换一下
+            meta_arrays[i]['alt'] = alt
+            meta_arrays[i]['pos'] = pos
 
-    # **直接在内存中进行后缀添加**
+    # 使用ThreadPoolExecutor并行化group处理
+    with ThreadPoolExecutor(max_workers=threads) as executor:
+        # 提交任务并显示进度条
+        list(tqdm(executor.map(rSV_info_modify, [group_df for _, group_df in grouped_final_data]),
+                             desc="Normalizing info of rSVs", unit="group",total=len(grouped_final_data)))
+    
+    # 添加后缀编号 # .groupby这里可以调整输入的是第一步还是第二步处理
     final_data['group_name_suffix'] = final_data.groupby('group_name').cumcount() + 1
     final_data['group_name'] = final_data['group_name'] + '_rSV' + final_data['group_name_suffix'].astype(str)
-
-    # 删除临时列
-    final_data.drop(columns=['group_name_suffix'], inplace=True)
-
-    # 保存文件到指定目录（固定文件名为 rsv_meta.csv）
-    file_name = "rsv_meta.csv"
+    final_data = final_data.drop(columns=['group_name_suffix'])
+    
+    # 保存文件
+    file_name = "rSV_meta.csv"
     output_file = os.path.join(output, file_name)
     final_data.to_csv(output_file, index=False)
+    print(f"{file_name} generated!")
 
-    print(f"{file_name} generated！")
 
 ######下面提取T矩阵对应的GT矩阵
 
@@ -714,14 +774,13 @@ import pandas as pd
 import re
 
 def extract_vcf_sample(input_csv: str, output_gt: str, out: str):
-    """ 从 rsv_meta.csv 解析 group_name，并提取 GT 样本数据 """
-
+    """ 从 rSV_meta.csv 解析 group_name，并提取 GT 样本数据 """
     df_meta = pd.read_csv(input_csv)
     total = len(df_meta)
     gt_data = []
     print(f'Count of rSVs: {total}')
     # 使用 tqdm 包裹 iterrows，显示进度条
-    for index, row in tqdm(df_meta.iterrows(), total=len(df_meta), desc="Generating rsv GT matrix"):
+    for index, row in tqdm(df_meta.iterrows(), total=len(df_meta), desc="Generating rSV GT matrix"):
         group_name = row["group_name"]  # 例："Group_2_19_某pos_rSV1"
         match = re.match(r"Group_(\d+)_(\d+)_(\d+)_([rR][sS][vV]\d+)", group_name)
 
@@ -729,7 +788,7 @@ def extract_vcf_sample(input_csv: str, output_gt: str, out: str):
             print(f"⚠️ Skipping invalid group_name: {group_name}")
             continue
 
-        chrom, number, pos, rsv_name = match.groups()
+        chrom, number, pos, rSV_name = match.groups()
 
         # **查找匹配的 T_matrix 文件**
         t_matrix_file = find_t_matrix_file(chrom, number, out)
@@ -742,12 +801,12 @@ def extract_vcf_sample(input_csv: str, output_gt: str, out: str):
         # **读取 T_matrix**
         df_t = pd.read_csv(t_matrix_file, index_col=0)
 
-        if rsv_name not in df_t.index:
-            print(f"⚠️ Warning: {rsv_name} not found in {t_matrix_file}")
+        if rSV_name not in df_t.index:
+            print(f"⚠️ Warning: {rSV_name} not found in {t_matrix_file}")
             continue
 
         # **提取 GT 行，并转换为 VCF GT 格式**
-        gt_values = df_t.loc[rsv_name].apply(convert_gt).tolist()
+        gt_values = df_t.loc[rSV_name].apply(convert_gt).tolist()
         gt_data.append(gt_values)
 
     # **转换为 DataFrame**
@@ -756,10 +815,9 @@ def extract_vcf_sample(input_csv: str, output_gt: str, out: str):
     # **保存 VCF（无表头）**
     gt_df.to_csv(output_gt, index=False, header=False, sep="\t")
 
-    #print(f"✅ VCF GT 数据已保存至 {output_gt}！")
 
 
-########生成rsv
+########生成rSV
 
 def vcf_generate(sample_names: list, csv_file: str, output_vcf: str, gt_file: str, output_filled_vcf: str):
     # 读取 CSV 文件
