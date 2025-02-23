@@ -1,105 +1,132 @@
 # Pangenome Heritability Tool
 
-A Python tool for processing pangenome structural variants and generating PLINK format files. This tool helps analyze structural variants in pangenomes by performing sequence alignment, k-mer window analysis, and converting results to VCF format.
+这是一个用于处理泛基因组结构变异并生成PLINK格式文件的Python工具。该工具通过执行序列比对、k-mer窗口分析，并将结果转换为VCF格式，帮助分析泛基因组中的结构变异。
 
-## Quick Start
+## 快速开始
 
-### Installation with Conda (Recommended)
+### 使用Conda安装（推荐）
 ```bash
-# Create environment
+# 创建环境
 conda create -n test_panherit python=3.8
 conda activate test_panherit
 
-# Install panherit
+# 安装panherit
 git clone https://github.com/Lostmet/pangenome_heritability.git
 cd pangenome_heritability
 pip install .
 
-# Install MAFFT
+# 安装MAFFT
 conda install conda-forge::mafft
-
 ```
 
+### 使用指南
 
-# Usage Guide
+泛基因组遗传工具提供了多个命令来处理变异、执行比对并生成PLINK文件。每个步骤可以单独执行，也可以作为工作流的一部分运行。
+## 软件输入
 
-The Pangenome Heritability Tool provides several commands to process variants, perform alignments, and generate PLINK files. Each step can be run independently or as part of a pipeline.
+- `VCF`文件：包含结构变异（SV）
+- `FASTA`文件：包含SV对应染色体的FASTA序列文件
 
-## Command Overview
+## 软件主要输出
+### 1. 文件输出：
+- `rSV.vcf`文件：重叠的SV被细化成为rSV（refined SV）的vcf文件
+- `rSV_meta.csv`文件：rSV
+### 2. 命令行输出：
+- `run-all`命令：运行全部
+- 示例：（还没写）
 
-The tool provides four main commands: 
-- `process-vcf`: Process VCF file, group overlapping variants, and generate VCF file without overlap
-- `run-all`: Run the entire workflow in one command
+## 命令概览
 
-## Note
+该工具提供了以下命令：
+- `process-vcf`：处理VCF文件，分组重叠变异，生成无重叠的VCF文件。
+- `run-all`：在一个命令中运行整个工作流。
 
-Important: The VCF and reference FASTA files must use numeric chromosome identifiers (e.g., 1, 2, 3 for chromosomes) without additional prefixes or suffixes. Ensure your files adhere to this convention to avoid processing errors.
+## 注意事项
 
-Example of a VCF File Header: （VCF现在可以不解压了，需要保证indel的Ref和Alt是标准格式，需要保证有索引文件）
+**重要**：VCF和参考FASTA文件必须使用数字染色体标识符（例如：1、2、3表示染色体），且不应有任何前缀或后缀。确保您的文件遵循此格式，以避免处理错误。确保VCF文件的SV格式是标准化的：删除（deletion）应使用`sv1`，插入（insertion）应使用`sv2`，倒位（inversion）应使用`sv3`。您可以使用外部工具如`bcftools norm`进行标准化（本软件未安装此工具）。
 
-```##fileformat=VCFv4.2
+### VCF文件头示例：
+（VCF文件现在可以直接使用，无需解压；确保Ref和Alt字段中的indels遵循标准格式，并且必须有索引文件）
+```bash
+##fileformat=VCFv4.2
 ##source=YourTool
-#CHROM  POS     ID      REF     ALT     QUAL    FILTER  INFO
-1       12345   rs123   ACTA    A       50      PASS    .
-2       67890   rs456   G       GAAC    99      PASS    .
+#CHROM  POS  ID    REF     ALT     QUAL    FILTER  INFO   Sample1  Sample2  Sample3  Sample4
+1       1    sv1   ACTA    A       50      PASS    .       1/1      1/0      0/0      ./.
+1       5    sv2   G       GAAC    99      PASS    .       0/0      1/0      0/0      0/0
+1       6    sv3   GCTAG   <INV>   98      PASS    .       ./.      0/0      1/1      1/1
 ```
-Example of a FASTA File: （注意FASTA的输入的表头是>1这种类型的，不能是别的，如果是别的的话，需要自己调整）
+
+### FASTA文件示例：
+（注意：FASTA文件的头部必须是`>1`格式。如果是其他格式，需要自行调整。暂不支持特殊染色体，如X、Y、MT）
 ```
 >1
-AGCTAGCTAGCTAGCTAGCTAGCTAGCTAGCTAGCTAGCTAGCTAGCTAG
+ACTAGGCTAGCTAGCTAGCTAGCTAGCTAGCTAGCTAGCTAGCTAGCTAG
 >2
 TGCATGCATGCATGCATGCATGCATGCATGCATGCATGCATGCATGCATG
 ```
 
+## 快速使用示例
+```bash
+panherit process-vcf \
+    --vcf test.vcf.gz \
+    --ref test.fasta \
+    --out nSV_test \
+    --threads 8
+```
 
-## Quickly Usage
+选项：
+- `--vcf`：输入包含结构变异的VCF文件
+- `--ref`：参考基因组FASTA文件
+- `--out`：处理后的变异和FASTA文件的输出目录
+- `--threads`：并行线程数（默认：8）
+
 ```bash
 panherit run-all \
     --vcf test.vcf.gz \
     --ref test.fasta \
     --out output_directory \
-    --threads 4
+    --threads 8
 ```
-Options:
-- `--vcf`: Input VCF file containing structural variants
-- `--ref`: Reference genome FASTA file
-- `--out`: Output directory for processed variants and FASTA files
-- `--threads`: Number of parallel threads (default: 8)
 
+选项：
+- `--vcf`：输入包含结构变异的VCF文件
+- `--ref`：参考基因组FASTA文件
+- `--out`：处理后的变异和FASTA文件的输出目录
+- `--threads`：并行线程数（默认：8）
 
-## Requirements
-
+## 环境要求
 - Python 3.8+
 - MAFFT V7.526
-- External dependencies:
+- 外部依赖：
   - pandas
   - numpy
   - biopython
   - click
   - tqdm
 
-# 文件夹结构
+---
 
-## 1. 主文件夹
-- **a. Group_D_matrix.csv**: Group_"chrom"_"number"_"pos"，D矩阵，rSV-SV
-- **b. Group_T_matrix.csv**: 对应的T矩阵，rSV-samples
-- **c. Group_X_matrix.csv**: 对应的X矩阵, SV-samples
-- **d. GT_matrix.csv**: T矩阵的合并（rsv.vcf的GT矩阵，格式为1/0类型）
-- **e. output_final_results.csv**: 储存rsv正确的ref和alt，同一个rsv会有多个alt
-- **f. output.vcf**: 无GT矩阵的vcf
-- **g. ⭐ pangenome_rSV.vcf**: 最终输出的rsv的vcf文件
-- **h. (processed_) comparison_results.csv**: kmer比对的过程文件
-- **i. ⭐ rsv_meta.csv**: 填充入vcf文件中的ID，pos，ref，alt的初始文件
-- **j. T_matrix_abnormal_all.csv**: rSV-sample矩阵（T矩阵）中异常值占非零正常值的比例
-- **k. T_matrix_abnormal.csv**: 具体group_name下的，每个T矩阵中非零值的数目，异常值的数目和比例
-- **l. variants_extended.fasta**: 按照POS截取并分组的fasta文件汇总
+## 文件夹结构
 
-## 2. 子文件夹：alignment_results
-- **a. Group_input_origin.fasta**: Group_"chrom"_"number"_"pos"，从variants_extended.fasta截取并简化的fasta文件，作为align的输入，进行了预对齐，没有切片
-- **b. Group_aligned.fasta**: 上一个文件经过比对后的结果文件，用于下一步kmer的生成
-- **c. Group_input_spliced.fasta**: 顾名思义，就是同pos的insertion的切片的序号
-- **d. Group_aligned_spliced.fasta**：切片完成后，mafft软件比对的结果，对应的无spliced后缀的aligned.fasta文件就是合并后的最终align结果
+### 1. 主文件夹
+- **a. Group_D_matrix.csv**：Group_"chrom"_"number"_"pos"，D矩阵，rSV-SV
+- **b. Group_T_matrix.csv**：对应的T矩阵，rSV-samples
+- **c. Group_X_matrix.csv**：对应的X矩阵，SV-samples
+- **d. GT_matrix.csv**：合并后的T矩阵（rsv.vcf的GT矩阵，格式为1/0类型）
+- **e. output_final_results.csv**：储存rsv正确的ref和alt，同一个rsv会有多个alt
+- **f. output.vcf**：无GT矩阵的VCF文件
+- **g. ⭐ pangenome_rSV.vcf**：最终输出的rsv的VCF文件
+- **h. comparison_results.csv**：k-mer比对的过程文件
+- **i. ⭐ rsv_meta.csv**：填充入VCF文件中的ID，pos，ref，alt的初始文件
+- **j. T_matrix_abnormal_all.csv**：rSV-sample矩阵（T矩阵）中异常值占非零正常值的比例
+- **k. T_matrix_abnormal.csv**：具体group_name下的，每个T矩阵中非零值的数目，异常值的数目和比例
+- **l. variants_extended.fasta**：按POS截取并分组的FASTA文件汇总
 
-  
-## 3. 子文件夹：logs
-- 错误信息一部分会生成于此
+### 2. 子文件夹：alignment_results
+- **a. Group_input_origin.fasta**：Group_"chrom"_"number"_"pos"，从variants_extended.fasta截取并简化的FASTA文件，作为比对的输入
+- **b. Group_aligned.fasta**：上述文件经过比对后的结果文件，用于下一步k-mer的生成
+- **c. Group_input_spliced.fasta**：同一位置的插入序列的切片
+- **d. Group_aligned_spliced.fasta**：切片完成后，MAFFT软件比对的结果，对应的无切片后缀的aligned.fasta文件就是合并后的最终比对结果
+
+### 3. 子文件夹：logs
+- 错误信息部分会生成在此文件夹中
