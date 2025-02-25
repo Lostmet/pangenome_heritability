@@ -2,13 +2,14 @@ import click
 import shutil
 import time
 import os
+from pathlib import Path
 from .config import Config
 from .variant_processing.vcf_parser import process_variants, filter_vcf
 from .variant_processing.fasta_generator import generate_fasta_sequences
 from .alignment.mafft_wrapper import run_alignments 
 from .kmer.window_generator import process_fasta_files, save_kmer_results_to_csv, process_and_merge_results, parse_fasta_with_metadata
 from .kmer.comparison import process_comparison_results
-from .genotype.genotype_mapper import process_diff_array, process_vcf_to_x_matrix, compute_t_matrix, save_rSV_meta, extract_vcf_sample, vcf_generate, detect_abnormal
+from .genotype.genotype_mapper import process_diff_array, process_vcf_to_x_matrix, compute_t_matrix, save_rSV_meta, extract_vcf_sample, vcf_generate, detect_abnormal, sample_name_contract
 from .utils.logging_utils import get_logger
 
 def check_tools(*tools):
@@ -120,9 +121,8 @@ def run_all(vcf: str, ref: str, out: str, threads: int):
             output_dir=out,
             threads=threads
         )
-        # print(f'alignments_config.threads:{alignments_config.threads}')
 
-        # ✅ 传递两个参数，路径和has_insertion
+        # ✅ 传递参数，路径和has_insertion_dict,poly_ins_list以判断是否存在poly_ins
         run_alignments(alignments_config, fasta_path, has_insertion_dict, poly_ins_list)
         #print(f"dict:{has_insertion_dict}, list:{poly_ins_list}")
         click.echo(f"Alignments completed. Results saved in alignment_results directory")
@@ -130,7 +130,6 @@ def run_all(vcf: str, ref: str, out: str, threads: int):
         click.echo("Step 3: Processing K-mers...")
         alignments_dir = os.path.join(out, "alignment_results")
         intermediate_csv = os.path.join(out, "comparison_results.csv")
-        #processed_csv = os.path.join(out, "processed_comparison_results.csv")
         final_csv = os.path.join(out, "output_final_results.csv")
         
         # 获取genome metadata
@@ -148,22 +147,24 @@ def run_all(vcf: str, ref: str, out: str, threads: int):
         click.echo("b. Saving kmers to .csv for next processing...")
         save_kmer_results_to_csv(results, intermediate_csv)
         click.echo("Done")
-        #process_comparison_results(intermediate_csv, processed_csv) # 用于处理未成功比对的seq
-        ####### 限速步骤，merge步骤
+        #，merge步骤
         process_and_merge_results(intermediate_csv, final_csv, threads) 
 
         click.echo(f"K-mer processing completed. Results saved in {final_csv}")
 
         click.echo("Step 4: Converting to VCF format and Generating matrix...")
+        # 创建用于储存矩阵的文件夹
+        matrix_dir = Path(out) / "matrix_results"
+        matrix_dir.mkdir(parents=True, exist_ok=True)
         click.echo("a. Generating D matrix...")
         # Step 1: 处理 diff_array，生成 D_matrix
-        process_diff_array(final_csv, out)
+        process_diff_array(final_csv, matrix_dir)
         # Step 2: 读取 VCF，生成 X_matrix，并且储存sample_names
         click.echo("b. Generating X matrix...")
-        sample_names = process_vcf_to_x_matrix(vcf, out)
+        sample_names = process_vcf_to_x_matrix(vcf, matrix_dir)
         # Step 3: 计算 T_matrix
         click.echo("c. Generating T matrix...")
-        compute_t_matrix(out)
+        compute_t_matrix(matrix_dir)
 
         click.echo("D, X, T matrix generated")
         click.echo("Generating rSV_meta.csv for meta information of rSVs...(processing pos, ref, alt)")
@@ -173,16 +174,15 @@ def run_all(vcf: str, ref: str, out: str, threads: int):
         output_vcf = os.path.join(out, "output.vcf")
         rSV_vcf = os.path.join(out, "pangenome_rSV.vcf")
         click.echo("4. Generating GT matrix and VCF files...")
-        extract_vcf_sample(rSV_meta_csv, gt_matrix, out)#生成gt_matrix，用于填充vcf的GT
+        extract_vcf_sample(rSV_meta_csv, gt_matrix, matrix_dir, threads)#生成gt_matrix，用于填充vcf的GT
         #扔进去sample_names用于生成vcf
         vcf_generate(sample_names, rSV_meta_csv, output_vcf, gt_matrix, rSV_vcf)#最终生成rSV.vcf
-
 
         click.echo("pangenome_rSV.vcf generated!")
 
         #第五步，检测不合理的GT数据
         click.echo("Step 5: Detect abnormal GT data...")
-        detect_abnormal(out)
+        detect_abnormal(matrix_dir)
 
         click.echo("All steps completed successfully!")
         end_time = time.time()
@@ -195,10 +195,78 @@ def run_all(vcf: str, ref: str, out: str, threads: int):
         seconds = total_time % 60  # 剩余秒数
         
         # 格式化输出
-        print(f"Total time taken: {int(hours)}:{int(minutes):02d}:{int(seconds):02d}")
+        click.echo(f"Total time taken: {int(hours)}:{int(minutes):02d}:{int(seconds):02d}")
     except RuntimeError as e:
         click.echo(f"Error: {str(e)}", err=True)
         raise click.Abort()
     except Exception as e:
         click.echo(f"Error in run-all: {str(e)}", err=True)
         raise click.Abort()
+
+# 有out_final_resuls.csv的可以用这个接着做
+@cli.command("make-meta")
+@click.option('--vcf', required=True, help='Input VCF file')
+@click.option('--out', required=True, help='Output directory')
+@click.option('--threads', default=10, type=int, help='Number of threads')
+
+def make_meta(vcf: str, out: str, threads: int):
+    final_csv = os.path.join(out, "output_final_results.csv")
+    click.echo("Step 4: Converting to VCF format and Generating matrix...")
+    # 用于储存矩阵的文件夹
+    matrix_dir = Path(out) / "matrix_results"
+
+    click.echo("a. Generating D matrix...")
+    # Step 1: 处理 diff_array，生成 D_matrix
+    process_diff_array(final_csv, matrix_dir)
+    # Step 2: 读取 VCF，生成 X_matrix，并且储存sample_names
+    click.echo("b. Generating X matrix...")
+    sample_names = process_vcf_to_x_matrix(vcf, matrix_dir)
+    # Step 3: 计算 T_matrix
+    click.echo("c. Generating T matrix...")
+    compute_t_matrix(matrix_dir)
+
+    click.echo("D, X, T matrix generated")
+
+    click.echo("Generating rSV_meta.csv for meta information of rSVs...(processing pos, ref, alt)")
+    save_rSV_meta(final_csv, out, threads)#生成rSV_meta，用于查阅ref，alt等信息
+    rSV_meta_csv = os.path.join(out, "rSV_meta.csv")
+    gt_matrix = os.path.join(out, "GT_matrix.csv")
+    output_vcf = os.path.join(out, "output.vcf")
+    rSV_vcf = os.path.join(out, "pangenome_rSV.vcf")
+    click.echo("4. Generating GT matrix and VCF files...")
+    extract_vcf_sample(rSV_meta_csv, gt_matrix, matrix_dir, threads)#生成gt_matrix，用于填充vcf的GT
+    #扔进去sample_names用于生成vcf
+    vcf_generate(sample_names, rSV_meta_csv, output_vcf, gt_matrix, rSV_vcf)#最终生成rSV.vcf
+
+    click.echo("pangenome_rSV.vcf generated!")
+
+    #第五步，检测不合理的GT数据
+    click.echo("Step 5: Detect abnormal GT data...")
+    detect_abnormal(matrix_dir)
+
+    click.echo("All steps completed successfully!")
+
+# 生成了meta之后用这个继续做
+@cli.command("make-vcf")
+@click.option('--vcf', required=True, help='Input VCF file')
+@click.option('--out', required=True, help='Output directory')
+@click.option('--threads', default=10, type=int, help='Number of threads')
+def make_vcf(vcf, out ,threads):
+    sample_names = sample_name_contract(vcf)
+    matrix_dir = Path(out) / "matrix_results"
+    rSV_meta_csv = os.path.join(out, "rSV_meta.csv")
+    gt_matrix = os.path.join(out, "GT_matrix.csv")
+    output_vcf = os.path.join(out, "output.vcf")
+    rSV_vcf = os.path.join(out, "pangenome_rSV.vcf")
+    click.echo("4. Generating GT matrix and VCF files...")
+    extract_vcf_sample(rSV_meta_csv, gt_matrix, matrix_dir, threads)#生成gt_matrix，用于填充vcf的GT
+    #扔进去sample_names用于生成vcf
+    vcf_generate(sample_names, rSV_meta_csv, output_vcf, gt_matrix, rSV_vcf)#最终生成rSV.vcf
+
+    click.echo("pangenome_rSV.vcf generated!")
+
+    #第五步，检测不合理的GT数据
+    click.echo("Step 5: Detect abnormal GT data...")
+    detect_abnormal(matrix_dir)
+
+    click.echo("All steps completed successfully!")
