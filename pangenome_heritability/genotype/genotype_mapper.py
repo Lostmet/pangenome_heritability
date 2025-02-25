@@ -760,69 +760,123 @@ def convert_gt(value):
     except:
         return "./."  # 遇到异常情况时填充缺失数据
 
-def find_t_matrix_file(chrom, number, out):
-    """ 查找符合 Group_{chrom}_{number}_*_T_matrix.csv 形式的文件 """
-    pattern = os.path.join(out, f"Group_{chrom}_{number}_*_T_matrix.csv")  # 拼接路径和模式
-    matching_files = glob.glob(pattern)  # 匹配文件
-    if matching_files:
-        return matching_files[0]
-    else:
-        return None
+import os
+import re
+import pandas as pd
+import click
+from tqdm import tqdm
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from collections import defaultdict
+
+def find_all_t_matrices(out: str) -> dict:
+    """ 预扫描所有T矩阵文件建立快速索引 """
+    mapping = defaultdict(dict)
+    pattern = re.compile(r"Group_(\d+)_(\d+)_(\d+)_T_matrix\.csv$")
+    
+    for file in glob.glob(os.path.join(out, "Group_*_*_*_T_matrix.csv")):
+        base = os.path.basename(file)
+        match = pattern.match(base)
+        if match:
+            chrom, number = match.groups()[:2]
+            mapping[(chrom, number)] = file
+    return mapping
+
+def process_group(args: tuple, t_matrix_cache: dict, t_matrix_mapping: dict, out: str) -> list:
+    """ 处理单个组的核心函数 """
+    (chrom, number), items = args
+    results = []
+    
+    # 查找文件路径
+    t_matrix_file = t_matrix_mapping.get((chrom, number), None)
+    if not t_matrix_file:
+        return [(idx, None, f"T matrix文件未找到，组: {chrom}_{number}") for idx, _, _, in items]
+
+    # 读取数据 （带缓存）
+    if t_matrix_file not in t_matrix_cache:
+        try:
+            t_matrix_cache[t_matrix_file] = pd.read_csv(t_matrix_file, index_col=0)
+        except Exception as e:
+            return [(idx, None, f"文件读取错误: {str(e)}") for idx, _, _ in items]
+    
+    df_t = t_matrix_cache[t_matrix_file]
+    
+    # 批量处理组内所有rSV
+    for orig_idx, rSV_name, group_name in items:
+        if rSV_name not in df_t.index:
+            results.append((orig_idx, None, f"rSV数据缺失: {rSV_name}@{t_matrix_file}"))
+            continue
+
+        try:
+            raw_gt = df_t.loc[rSV_name].values.tolist()
+            converted_gt = list(map(convert_gt, raw_gt))  # 立即转换
+            results.append((orig_idx, converted_gt, None))
+        except Exception as e:
+            results.append((orig_idx, None, f"GT处理异常: {str(e)}"))
+    
+    return results
 
 def extract_vcf_sample(input_csv: str, output_gt: str, out: str, threads: int):
-    """ 从 rSV_meta.csv 解析 group_name，并提取 GT 样本数据 """
+    """ 优化后的数据提取函数 """
     df_meta = pd.read_csv(input_csv)
     total = len(df_meta)
-    gt_data = []
-    click.echo(f'Count of rSVs: {total}')  # 检索总共需要处理的rSV个数
+    
+    # 初始化结果容器
+    gt_matrix = [None] * total  # 保留原始顺序
+    error_log = []
 
-    # 使用线程池并行查找T矩阵文件
+    # Stage 1: 预处理分组
+    group_groups = defaultdict(list)
+    for orig_idx, row in tqdm(df_meta.iterrows(), total=total, desc="预处理分组"):
+        group_name = row["group_name"]
+        match = re.fullmatch(r"Group_(\d+)_(\d+)_(\d+)_([rR][sS][vV]\d+)", group_name)
+        
+        if not match:
+            error_log.append((orig_idx, f"非法组名格式: {group_name}"))
+            continue
+
+        chrom, number, _, rSV_name = match.groups()
+        key = (chrom, number)
+        group_groups[key].append((orig_idx, rSV_name, group_name))
+
+    # Stage 2: 并行处理组
+    t_matrix_cache = {}  # 文件路径到数据框的映射
+    t_matrix_mapping = find_all_t_matrices(out)
+    
     with ThreadPoolExecutor(max_workers=threads) as executor:
-        t_matrix_futures = []
-        for index, row in tqdm(df_meta.iterrows(), total=total, desc="Processing rSVs", unit="rSV"):
-            group_name = row["group_name"]  # 例："Group_2_19_'pos'_rSV1"
-            match = re.match(r"Group_(\d+)_(\d+)_(\d+)_([rR][sS][vV]\d+)", group_name)
+        futures = []
+        for group_key in group_groups:
+            args = (group_key, group_groups[group_key])
+            futures.append(executor.submit(
+                process_group, args, t_matrix_cache, t_matrix_mapping, out
+            ))
 
-            if not match:
-                click.echo(f"⚠️ Skipping invalid group_name: {group_name}")
-                continue
-
-            chrom, number, pos, rSV_name = match.groups()
-
-            # 异步查找匹配的 T_matrix 文件
-            future = executor.submit(find_t_matrix_file, chrom, number, out)
-            t_matrix_futures.append((future, group_name, rSV_name))
-
-        # 等待所有任务完成
-        for future, group_name, rSV_name in t_matrix_futures:
-            t_matrix_file = future.result()
-
-            if not t_matrix_file:
-                click.echo(f"⚠️ Warning: No matching T matrix found for {group_name} (expected: Group_{group_name.split('_')[1]}_{group_name.split('_')[2]}_*_T_matrix.csv)")
-                continue
-
-            # 读取 T_matrix
+        # 异步收集结果
+        for future in tqdm(as_completed(futures), total=len(futures), desc="处理组"):
             try:
-                df_t = pd.read_csv(t_matrix_file, index_col=0)
+                group_results = future.result()
+                for (idx, data, err) in group_results:
+                    if err:
+                        error_log.append((idx, err))
+                    else:
+                        gt_matrix[idx] = data
             except Exception as e:
-                click.echo(f"⚠️ Error reading {t_matrix_file}: {e}")
-                continue
+                error_log.append((-1, f"组处理异常: {str(e)}"))
 
-            if rSV_name not in df_t.index:
-                click.echo(f"⚠️ Warning: {rSV_name} not found in {t_matrix_file}")
-                continue
+    # Stage 3: 错误处理和输出
+    valid_data = [data for data in gt_matrix if data is not None]
+    pd.DataFrame(valid_data).to_csv(output_gt, index=False, header=False, sep="\t")
+    
+    # 错误输出
+    if error_log:
+        error_df = pd.DataFrame(error_log, columns=["原始行号", "错误详情"])
+        error_path = os.path.join(os.path.dirname(output_gt), "processing_errors.csv")
+        error_df.to_csv(error_path, index=False)
+        click.echo(f"警告: 共检测到 {len(error_log)} 处错误，详见 {error_path}")
 
-            # 提取 GT 行并暂时不转换
-            gt_values_raw = df_t.loc[rSV_name].tolist()
-            gt_data.append(gt_values_raw)
+    click.echo(f"Successfully generated GT matrix with {len(valid_data)} valid records.")
 
-        # 对gt_data进行convert_gt转换，使用tqdm显示进度
-        gt_data_converted = list(tqdm(executor.map(lambda gt_values: list(map(convert_gt, gt_values)), gt_data), 
-                                      total=len(gt_data), desc="Converting GT values", unit="rSV"))
+# 注：需要保留原convert_gt和其他辅助函数的实现
 
-    # 转换为 DataFrame
-    gt_df = pd.DataFrame(gt_data_converted)
-    gt_df.to_csv(output_gt, index=False, header=False, sep="\t")
 
 ########生成rSV的VCF
 
