@@ -1,4 +1,4 @@
-import os
+import click
 import subprocess
 from concurrent.futures import ProcessPoolExecutor
 from concurrent.futures import as_completed
@@ -120,7 +120,7 @@ def align_group(threads: str, group_name: str, sequences: List[str], temp_dir: P
 
                         origin_fasta[key] = "".join(ori_list)
             except:
-                print(f"Warning: Cannot replace spliced align results in {group_name}") 
+                click.echo(f"Warning: Cannot replace spliced align results in {group_name}") 
         #print(f"我真的输出了：{origin_fasta}")
 
 
@@ -176,8 +176,8 @@ def run_alignments(config, fasta_file: str, has_insertion_dict: Dict[str, bool],
     # Customize tqdm format for simpler progress
     with ProcessPoolExecutor(max_workers=config.threads) as executor, tqdm(
         total=len(group_sequences),
-        desc="Processed Groups"#,
-        #bar_format="{desc}: {n}/{total} groups"
+        desc="Processed Groups",
+        unit='group'
     ) as pbar:
         futures = {}
 
