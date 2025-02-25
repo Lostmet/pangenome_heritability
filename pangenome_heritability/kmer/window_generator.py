@@ -338,7 +338,7 @@ def process_fasta_files(
             }
             
             for future in tqdm(as_completed(futures), total=len(futures), desc="Generating kmers"\
-                               #, bar_format="{desc}: {n_fmt}/{total_fmt} groups"
+                               , unit='group'
                                ):
                 result = future.result()
                 if result['error']:
