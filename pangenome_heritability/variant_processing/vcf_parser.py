@@ -70,7 +70,7 @@ def process_variants(config) -> List[VariantGroup]:
     all_variants = []
     
     logger.info("Reading variants from VCF...")
-    with tqdm(desc="Reading variants") as pbar:
+    with tqdm(desc="Reading variants",unit='variants') as pbar:
         try:
             var_bp_all = 0
             var_bp_max = 0
@@ -159,7 +159,7 @@ def process_variants(config) -> List[VariantGroup]:
 import pysam
 import os
 from tqdm import tqdm
-
+import click
 def filter_vcf(config, single_group):
     nvcf_name = "pangenome_nSV.vcf"
     output_vcf = os.path.join(config.output_dir, nvcf_name)
@@ -174,7 +174,7 @@ def filter_vcf(config, single_group):
         
         # 重新打开输入文件遍历记录
         with pysam.VariantFile(config.vcf_file, "r") as vcf_in:
-            for i in tqdm(range(len(single_group)), desc="Generating nSV: "):
+            for i in tqdm(range(len(single_group)), desc="Generating nSV: ", unit='variants'):
                 variant = single_group[i].variants[0]
                 chrom, pos = variant.chrom, variant.start
                 
@@ -185,8 +185,7 @@ def filter_vcf(config, single_group):
                         vcf_line = str(rec).strip()  # 去除前后空白
                         f_out.write(vcf_line + '\n')  # 确保换行符一致性
                         break
-    
-    print(f"SVs with no overlapped saved as {nvcf_name}")
+    click.echo(f"SVs with no overlapped saved as {nvcf_name}")
 
 
 
