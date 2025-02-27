@@ -501,15 +501,18 @@ def process_vcf_to_x_matrix(vcf_name: str, output_dir: str):
 
     # 转换基因型函数
     def transform_gt(gt):
-        if gt == './.': return 0
+        if gt == './.': return -999 # 改为缺失值
         elif gt == '0/0': return 0
         elif gt == '1/0' or gt == '0/1': return 1
         elif gt == '1/1': return 2
         else: return -1
 
-    # 对样本列应用基因型转换
+    # 对样本列应用基因型转换# 0    0
+                          #  1    0
+                        # 2    0
+        #Name: SL516_SL516, dtype: int64
     for sample in sample_names:
-        df_vcf[sample] = df_vcf[sample].apply(transform_gt)
+        df_vcf[sample] = df_vcf[sample].apply(transform_gt) 
 
     # 确保输出目录是绝对路径
     output_dir = os.path.abspath(output_dir)
@@ -595,7 +598,6 @@ def compute_t_matrix(output_dir: str):
 
         d_data = df_d.iloc[:, 1:].values
         x_data = df_x.iloc[:, 1:].values
-
         # 计算 T_matrix
         t_matrix = np.dot(d_data.T, x_data)
 
@@ -674,24 +676,22 @@ def save_rSV_meta(input: str, output: str, threads: int):
                     # 选择第一个有效meta并去重
                     extracted_meta_data.add((group_name, str(meta_arrays[seq_idx][i])))
                     break  # 找到第一个有效的即可
-    
+    click.echo("卡了吗1")
     # 数据结构转换与预处理
     meta_list = [(group, ast.literal_eval(item)) for group, item in extracted_meta_data]
-    
+    click.echo("卡了吗2")
     # 排序，先利用染色体，再用组别号，再用pos号
     meta_list.sort(key=lambda x: (int(x[0].split('_')[1]), int(x[0].split('_')[2]), x[1]['pos']))
+    click.echo("卡了吗3")
     #click.echo(meta_list)
     # 创建DataFrame
     final_data = pd.DataFrame(meta_list, columns=["group_name", "meta_array"])
-    
+    click.echo("卡了吗4")
     # 这里插入代码进行并行处理
-
-    # 去重处理
-    final_data = final_data.drop_duplicates(subset=["meta_array"])
     ##### 在这里进行ref, pos, alt的转换
-
+    click.echo("卡了吗我去掉去重了谢谢你")
     grouped_final_data = final_data.groupby(final_data.columns[0])
-
+    click.echo("卡了吗6")
     # 定义处理函数，用于每个group_name的计算
     def rSV_info_modify(group_df):
         meta_arrays = []  # 存旧的
@@ -743,6 +743,8 @@ def save_rSV_meta(input: str, output: str, threads: int):
     click.echo(f"{file_name} generated!")
 
 
+
+
 ######下面提取T矩阵对应的GT矩阵
 from concurrent.futures import ThreadPoolExecutor
 def convert_gt(value):
@@ -753,10 +755,10 @@ def convert_gt(value):
             return "0/0"
         elif value == 1:
             return "1/0"
-        elif value == 2:
-            return "1/1"
+        elif value >= 2:
+            return "1/1" # 都当2
         else:
-            return "./."
+            return "./." 
     except:
         return "./."  # 遇到异常情况时填充缺失数据
 
@@ -874,7 +876,7 @@ def extract_vcf_sample(input_csv: str, output_gt: str, out: str, threads: int):
         click.echo(f"警告: 共检测到 {len(error_log)} 处错误，详见 {error_path}")
 
     click.echo(f"Successfully generated GT matrix with {len(valid_data)} valid records.")
-
+    return len(valid_data)
 # 注：需要保留原convert_gt和其他辅助函数的实现
 
 
