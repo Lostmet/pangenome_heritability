@@ -68,25 +68,39 @@ def process_variants(config) -> List[VariantGroup]:
         raise InputError(f"Failed to open VCF file: {str(e)}")
         
     all_variants = []
-    
+    single_group = [] 
+    inv_group = [] # 加一个inv_group
     logger.info("Reading variants from VCF...")
     with tqdm(desc="Reading variants",unit='variants') as pbar:
         try:
             var_bp_all = 0
             var_bp_max = 0
             for record in vcf.fetch():
-                variant = Variant(
-                    chrom=record.chrom,
-                    start=record.pos,
-                    end=record.pos + len(record.ref) - 1,
-                    ref=record.ref,
-                    alt=list(record.alts),
-                    samples={s: record.samples[s]['GT'] for s in record.samples}
-                )
-                var_bp = abs(len(variant.ref)-len(variant.alt[0]))
-                var_bp_max = max(var_bp_max, var_bp)
-                var_bp_all += var_bp # 暂时不管inv
-                all_variants.append(variant)
+                #print(f'alts:{list(record.alts)}')
+                if list(record.alts) == ['<INV>']:
+                    #print("有inv嘛")
+                    inv = Variant(
+                        chrom=record.chrom,
+                        start=record.pos,
+                        end=record.pos + len(record.ref) - 1,
+                        ref=record.ref,
+                        alt=list(record.alts),
+                        samples={s: record.samples[s]['GT'] for s in record.samples}
+                    )
+                    inv_group.append(inv) # 扔到新的group里面
+                else:
+                    variant = Variant(
+                        chrom=record.chrom,
+                        start=record.pos,
+                        end=record.pos + len(record.ref) - 1,
+                        ref=record.ref,
+                        alt=list(record.alts),
+                        samples={s: record.samples[s]['GT'] for s in record.samples}
+                    )
+                    var_bp = abs(len(variant.ref)-len(variant.alt[0]))
+                    var_bp_max = max(var_bp_max, var_bp)
+                    var_bp_all += var_bp # 暂时不管inv
+                    all_variants.append(variant)
                 pbar.update(1)
         except Exception as e:
             raise InputError(f"Error reading VCF file: {str(e)}")
@@ -99,8 +113,33 @@ def process_variants(config) -> List[VariantGroup]:
     # 筛选出所有vcf的variants后续准备进行group的判断
     logger.info("Grouping sorted variants...")
     variant_groups = []
+    inv_groups = []
     current_group = None
-    variant_count = len(all_variants)
+    inv_current_group = None
+    inv_count = len(inv_group)
+    variant_count = len(all_variants) + inv_count
+    # 处理inv_group
+    for inv in inv_group:
+        if inv_current_group is None:
+            # First variant
+            inv_current_group = VariantGroup(inv.chrom)
+            inv_current_group.add_variant(inv)
+        else:
+            # If chromosome is different or they do not overlap, start a new group
+            if (inv_current_group.chrom != inv.chrom or 
+                not inv_current_group.overlaps(inv)):
+                inv_groups.append(inv_current_group)
+                inv_current_group = VariantGroup(inv.chrom)
+                inv_current_group.add_variant(inv)
+            else:
+                # Still in the same group
+                inv_current_group.add_variant(inv)
+    click.echo(f"Exclude {inv_count} inversions") # 记录排除掉的inv的个数
+    # Add the last group if it exists
+    if inv_current_group is not None:
+        inv_groups.append(inv_current_group)
+
+
     with tqdm(desc="Grouping variants", total=variant_count) as pbar:
         for variant in all_variants:
             if current_group is None:
@@ -126,13 +165,17 @@ def process_variants(config) -> List[VariantGroup]:
     
     logger.info(f"Processed {len(variant_groups)} variant groups")
 
-    single_group = []
+    
     multi_group = []
     multi_var_bp = 0
     multi_var_bp_max = 0
     single_sv_count = 0
     multi_var_bp_all = 0
     variant_max = 0
+    # 直接把inv_groups扔到single里面吃灰
+    for i in range(len(inv_groups)):
+        single_group.append(inv_groups[i])
+        single_sv_count += 1
     ### multi_group1:{'chrom': '2', 'variants': [Variant(chrom='2', start=906670, end=906670, ref='A', alt=['ATATATATATATA'], samples={'SL001_SL001':
     for i in range(len(variant_groups)):
         if len(variant_groups[i].variants) == 1:
@@ -142,6 +185,7 @@ def process_variants(config) -> List[VariantGroup]:
             multi_group.append(variant_groups[i])
             for n in range(len(variant_groups[i].variants)):
                 variant = variant_groups[i].variants[n]
+                # print(f"这里：{variant.alt[0]}")
                 ref_bp = len(variant.ref)
                 alt_bp = len(variant.alt[0])
                 multi_var_bp = abs(ref_bp - alt_bp)
@@ -151,10 +195,10 @@ def process_variants(config) -> List[VariantGroup]:
                     variant_max = variant
                 
     percentage_sv_overlapped = (1- single_sv_count/variant_count)*100 # 给到一个重叠的SV的百分比
-  
+
     # print(f'single_group1:{single_group[0].__dict__}')
     # multi group，var未group的bp，single group，single_sv_count，multi后的var_bp，和max
-    return multi_group, var_bp_all, var_bp_max, single_sv_count, multi_var_bp_all, multi_var_bp_max, percentage_sv_overlapped, variant_max, single_group
+    return multi_group, var_bp_all, var_bp_max, single_sv_count, multi_var_bp_all, multi_var_bp_max, percentage_sv_overlapped, variant_max, single_group, inv_count, variant_count
 
 import pysam
 import os
