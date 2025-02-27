@@ -39,11 +39,11 @@ def process_vcf(vcf: str, ref: str, out: str, threads: int):
     """Variants overlap, group and nSV generate"""
     try:
         start_time = time.time()
-        click.echo("Processing VCF and generating nSV.vcf...")
+        click.echo("Step 1: Processing VCF and generating FASTA...")
         config = Config(vcf_file=vcf, ref_fasta=ref, output_dir=out, threads = threads)
         grouped_variants_list, var_bp_all, var_bp_max, single_sv_count, \
         multi_bp, multi_bp_max, percentage_sv_overlapped, \
-        variant_max, single_group= process_variants(config) # var_bp是ref-alt的绝对值之和，不考虑inv，只多不少
+        variant_max, single_group, inv_count, variant_count= process_variants(config) # var_bp是ref-alt的绝对值之和，不考虑inv，只多不少
         click.echo(f"Total base pairs to be processed: {var_bp_all:,}, max per variant: {var_bp_max:,}")
         click.echo(f'Base pairs to be processed after grouping: {multi_bp:,}, max per variant: {multi_bp_max:,}')
         click.echo(f'Max variant: chromosome = {variant_max.chrom}, position = {variant_max.start:,}')
@@ -77,7 +77,7 @@ def run_all(vcf: str, ref: str, out: str, threads: int):
         config = Config(vcf_file=vcf, ref_fasta=ref, output_dir=out, threads = threads)
         grouped_variants_list, var_bp_all, var_bp_max, single_sv_count, \
         multi_bp, multi_bp_max, percentage_sv_overlapped, \
-        variant_max, single_group= process_variants(config) # var_bp是ref-alt的绝对值之和，不考虑inv，只多不少
+        variant_max, single_group, inv_count, variant_count= process_variants(config) # var_bp是ref-alt的绝对值之和，不考虑inv，只多不少
 
         click.echo(f"Total base pairs to be processed: {var_bp_all:,}, max per variant: {var_bp_max:,}")
         # 用的最多的应该是实际用到的bp：multi_bp
@@ -174,7 +174,8 @@ def run_all(vcf: str, ref: str, out: str, threads: int):
         output_vcf = os.path.join(out, "output.vcf")
         rSV_vcf = os.path.join(out, "pangenome_rSV.vcf")
         click.echo("4. Generating GT matrix and VCF files...")
-        extract_vcf_sample(rSV_meta_csv, gt_matrix, matrix_dir, threads)#生成gt_matrix，用于填充vcf的GT
+        rSV_count = extract_vcf_sample(rSV_meta_csv, gt_matrix, matrix_dir, threads)#生成gt_matrix，用于填充vcf的GT
+        click.echo(f"rSV count: {rSV_count:,}")
         #扔进去sample_names用于生成vcf
         vcf_generate(sample_names, rSV_meta_csv, output_vcf, gt_matrix, rSV_vcf)#最终生成rSV.vcf
 
@@ -196,6 +197,14 @@ def run_all(vcf: str, ref: str, out: str, threads: int):
         
         # 格式化输出
         click.echo(f"Total time taken: {int(hours)}:{int(minutes):02d}:{int(seconds):02d}")
+        click.echo(f"Total variants count: {variant_count:,}")
+        click.echo(f"INV count: {inv_count:,}")
+        click.echo(f"nSV count: {single_sv_count:,}")
+        click.echo(f"Overlapped SV count: {(variant_count - variant_count):,}")
+        click.echo(f"Percentage of overlapped: {percentage_sv_overlapped:.2f}%")
+        click.echo(f"Group count: {total_groups:,}")
+        click.echo(f"rSV count: {rSV_count:,}")
+
     except RuntimeError as e:
         click.echo(f"Error: {str(e)}", err=True)
         raise click.Abort()
@@ -215,17 +224,7 @@ def make_meta(vcf: str, out: str, threads: int):
     # 用于储存矩阵的文件夹
     matrix_dir = Path(out) / "matrix_results"
 
-    click.echo("a. Generating D matrix...")
-    # Step 1: 处理 diff_array，生成 D_matrix
-    process_diff_array(final_csv, matrix_dir)
-    # Step 2: 读取 VCF，生成 X_matrix，并且储存sample_names
-    click.echo("b. Generating X matrix...")
-    sample_names = process_vcf_to_x_matrix(vcf, matrix_dir)
-    # Step 3: 计算 T_matrix
-    click.echo("c. Generating T matrix...")
-    compute_t_matrix(matrix_dir)
-
-    click.echo("D, X, T matrix generated")
+    sample_names = sample_name_contract(vcf)
 
     click.echo("Generating rSV_meta.csv for meta information of rSVs...(processing pos, ref, alt)")
     save_rSV_meta(final_csv, out, threads)#生成rSV_meta，用于查阅ref，alt等信息
