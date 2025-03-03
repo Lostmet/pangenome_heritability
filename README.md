@@ -24,13 +24,15 @@ conda install conda-forge::mafft
 泛基因组遗传工具提供了多个命令来处理变异、执行比对并生成PLINK文件。每个步骤可以单独执行，也可以作为工作流的一部分运行。
 ## 软件输入
 
-- `VCF`文件：包含结构变异（SV）
-- `FASTA`文件：包含SV对应染色体的FASTA序列文件
+- `VCF`文件及其索引文件：仅包含结构变异（SVs），.vcf文件或.vcf.gz文件以及其索引文件
+- `FASTA`文件：包含SVs对应染色体的FASTA序列文件（即.fa文件或.fasta文件）
 
 ## 软件主要输出
-### 1. 文件输出：
+### 1. 文件主要输出：
+- `alignment`文件夹：存储各个重叠组别的align结果，详情请看文末对文件夹结构的详细介绍
+- `matrix_results`文件夹：存储各个重叠组别的矩阵输出结果
 - `rSV.vcf`文件：重叠的SV被细化成为rSV（refined SV）的vcf文件
-- `rSV_meta.csv`文件：rSV
+- `rSV_meta.csv`文件：rSV具体的对应的pos，ref，alt细节
 ### 2. 命令行输出：
 - `run-all`命令：运行全部
 - 示例：（还没写）
@@ -40,24 +42,26 @@ conda install conda-forge::mafft
 该工具提供了以下命令：
 - `process-vcf`：处理VCF文件，分组重叠变异，生成无重叠的VCF文件。
 - `run-all`：在一个命令中运行整个工作流。
+- `make-meta`: 在有out_final_results.csv无rSV_meta.csv的情况下，继续run-all的步骤
+- `make-vcf`：在有rSV_meta.csv的情况下，继续run-all的步骤
 
 ## 注意事项
 
-**重要**：VCF和参考FASTA文件必须使用数字染色体标识符（例如：1、2、3表示染色体），且不应有任何前缀或后缀。确保您的文件遵循此格式，以避免处理错误。确保VCF文件的SV格式是标准化的：删除（deletion）应使用`sv1`，插入（insertion）应使用`sv2`，倒位（inversion）应使用`sv3`。您可以使用外部工具如`bcftools norm`进行标准化（本软件未安装此工具）。
+**重要**：VCF和参考FASTA文件必须使用数字染色体标识符（例如：1、2、3表示染色体），且不应有任何前缀或后缀。确保您的文件遵循此格式，以避免处理错误。确保VCF文件的SV格式是标准化的：删除（deletion）应使用`sv1`，插入（insertion）应使用`sv2`，倒位（inversion）应使用`sv3`。您可以使用外部工具如`bcftools norm`进行标准化（本软件未安装此工具）。请尽量分染色体进行rSV的识别运行，以防止计算性能瓶颈。
 
 ### VCF文件头示例：
-（VCF文件现在可以直接使用，无需解压；确保Ref和Alt字段中的indels遵循标准格式，并且必须有索引文件）
+VCF文件现在可以直接使用，无需解压；确保Ref和Alt字段中的indels遵循标准格式，并且必须有索引文件，否则，请使用bcftools等软件生成索引文件，可能的代码：`bcftools index your_vcf_files.vcf.gz`
 ```bash
 ##fileformat=VCFv4.2
 ##source=YourTool
-#CHROM  POS  ID    REF     ALT     QUAL    FILTER  INFO   Sample1  Sample2  Sample3  Sample4
-1       1    sv1   ACTA    A       50      PASS    .       1/1      1/0      0/0      ./.
-1       5    sv2   G       GAAC    99      PASS    .       0/0      1/0      0/0      0/0
-1       6    sv3   GCTAG   <INV>   98      PASS    .       ./.      0/0      1/1      1/1
+#CHROM  POS  ID    REF     ALT     QUAL    FILTER  INFO   FORMAT Sample1  Sample2  Sample3  Sample4
+1       1    sv1   ACTA    A       50      PASS    .        GT     1/1      1/0      0/0      ./.
+1       5    sv2   G       GAAC    99      PASS    .        GT     0/0      1/0      0/0      0/0
+1       6    sv3   GCTAG   <INV>   98      PASS    .        GT     ./.      0/0      1/1      1/1
 ```
 
 ### FASTA文件示例：
-（注意：FASTA文件的头部必须是`>1`格式。如果是其他格式，需要自行调整。暂不支持特殊染色体，如X、Y、MT）
+注意：FASTA文件的头部必须是`>1`格式。如果是其他格式，需要自行调整。请自行将特殊染色体，如X、Y、MT编码为具体数字
 ```
 >1
 ACTAGGCTAGCTAGCTAGCTAGCTAGCTAGCTAGCTAGCTAGCTAGCTAG
