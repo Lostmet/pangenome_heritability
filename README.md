@@ -47,7 +47,11 @@ conda install conda-forge::mafft
 
 ## 注意事项
 
-**重要**：VCF和参考FASTA文件必须使用数字染色体标识符（例如：1、2、3表示染色体），且不应有任何前缀或后缀。确保您的文件遵循此格式，以避免处理错误。确保VCF文件的SV格式是标准化的：删除（deletion）应使用`sv1`，插入（insertion）应使用`sv2`，倒位（inversion）应使用`sv3`。您可以使用外部工具如`bcftools norm`进行标准化（本软件未安装此工具）。请尽量分染色体进行rSV的识别运行，以防止计算性能瓶颈。
+**重要**：VCF和参考FASTA文件必须使用数字染色体标识符（例如：1、2、3表示染色体），且不应有任何前缀或后缀。确保您的文件遵循此格式，以避免处理错误。
+确保VCF文件的SV格式是标准化的：删除（deletion）应使用`sv1`标准格式，插入（insertion）应使用`sv2`，倒位（inversion）应使用`sv3`。
+请确保`FORMAT`仅有`GT`，如不是，请使用外部工具进行提取。
+您可以使用外部工具如`bcftools norm`进行标准化（本软件未安装此工具）。
+请尽量分染色体进行rSV的识别运行，以防止计算性能瓶颈。
 
 ### VCF文件头示例：
 VCF文件现在可以直接使用，无需解压；确保Ref和Alt字段中的indels遵循标准格式，并且必须有索引文件，否则，请使用bcftools等软件生成索引文件，可能的代码：`bcftools index your_vcf_files.vcf.gz`
