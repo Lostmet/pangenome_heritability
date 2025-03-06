@@ -1,6 +1,6 @@
 # Pangenome Heritability Tool
 
-这是一个用于处理泛基因组结构变异并生成PLINK格式文件的Python工具。该工具通过执行序列比对、k-mer窗口分析，并将结果转换为VCF格式，帮助分析泛基因组中的结构变异。
+这是一个用于处理泛基因组结构变异并生成VCF(v4.2)格式文件的Python工具。该工具通过执行序列比对、k-mer窗口分析，并将结果转换为VCF格式，帮助分析泛基因组中的结构变异。
 
 ## 快速开始
 
@@ -19,9 +19,6 @@ pip install .
 conda install conda-forge::mafft
 ```
 
-### 使用指南
-
-泛基因组遗传工具提供了多个命令来处理变异、执行比对并生成PLINK文件。每个步骤可以单独执行，也可以作为工作流的一部分运行。
 ## 软件输入
 
 - `VCF`文件及其索引文件：仅包含结构变异（SVs），`.vcf`文件或`.vcf.gz`文件以及其索引文件
@@ -47,14 +44,16 @@ conda install conda-forge::mafft
 
 ## 注意事项
 
-**重要**：VCF和参考FASTA文件必须使用数字染色体标识符（例如：1、2、3表示染色体），且不应有任何前缀或后缀。确保您的文件遵循此格式，以避免处理错误。
-确保VCF文件的SV格式是标准化的：删除（deletion）应使用`sv1`标准格式，插入（insertion）应使用`sv2`，倒位（inversion）应使用`sv3`。
-请确保`FORMAT`仅有`GT`，如不是，请使用外部工具进行提取。
-您可以使用外部工具如`bcftools norm`进行标准化（本软件未安装此工具）。
-请尽量分染色体进行rSV的识别运行，以防止计算性能瓶颈。
+**重要**：
+- VCF和参考FASTA文件必须使用数字染色体标识符（例如：1、2、3表示染色体，如23表示X染色体，24表示Y染色体），且不应有任何前缀（如chr）或后缀。确保您的文件遵循此格式，以避免处理错误。
+- 确保VCF文件的SV格式是标准化的：删除（deletion）应使用下面的VCF文件示例中的`sv1`标准格式，插入（insertion）应使用`sv2`，倒位（inversion）应使用`sv3`。
+- 请确保`FORMAT`仅有`GT`，如不是，请使用外部工具进行提取。
+- 您可以使用外部工具如`bcftools norm`进行标准化。
+- 请尽量分染色体进行rSV的识别运行，以防止计算性能瓶颈。
 
-### VCF文件头示例：
-VCF文件现在可以直接使用，无需解压；确保Ref和Alt字段中的indels遵循标准格式，并且必须有索引文件，否则，请使用bcftools等软件生成索引文件，可能的代码：`bcftools index your_vcf_files.vcf.gz`
+
+### VCF文件示例：
+VCF文件需要压缩使用，即后缀为`.vcf.gz`；确保Ref和Alt字段中的indels遵循标准格式，并且必须有索引文件，否则，请使用bcftools等软件生成索引文件，可能的代码：`bcftools index your_vcf_files.vcf.gz`
 ```bash
 ##fileformat=VCFv4.2
 ##source=YourTool
