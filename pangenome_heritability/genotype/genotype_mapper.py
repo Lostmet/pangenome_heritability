@@ -886,7 +886,7 @@ def extract_vcf_sample(input_csv: str, output_gt: str, out: str, threads: int):
 
 ########生成rSV的VCF
 
-def vcf_generate(sample_names: list, csv_file: str, output_vcf: str, gt_file: str, output_filled_vcf: str):
+def vcf_generate(sample_names: list, csv_file: str, gt_file: str, output_filled_vcf: str):
     # 读取 CSV 文件
     df = pd.read_csv(csv_file)
 
@@ -919,27 +919,21 @@ def vcf_generate(sample_names: list, csv_file: str, output_vcf: str, gt_file: st
     # **按 CHROM 和 POS 进行排序**
     vcf_df.sort_values(by=["#CHROM", "POS"], inplace=True)
     #click.echo(vcf_df.columns)
-    """ 从原始 VCF 提取列名，并保持一致写入新 VCF """
-    with open(output_vcf, "w") as outfile:
-        header = "\t".join(columns) + "\t" + "\t".join(sample_names)  # 提取正确的列名
-        outfile.write("##fileformat=VCFv4.2\n")  # VCF 版本信息
-        outfile.write('##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">\n')
-        outfile.write(header + "\n")  # 写入正确的表头
+    """ 合并 VCF 数据和 GT 数据，直接写入最终文件 """
+    with open(output_filled_vcf, "w") as out_vcf, open(gt_file, "r") as gt:
+        # 写入头部信息
+        out_vcf.write("##fileformat=VCFv4.2\n")
+        out_vcf.write('##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">\n')
+        header = "\t".join(columns) + "\t" + "\t".join(sample_names)
+        out_vcf.write(header + "\n")
 
-        vcf_df.to_csv(outfile, sep="\t", index=False, header=False)
-    #click.echo(f"✅ VCF 头部提取完成，已写入 {output_vcf}")
+        # 遍历输入数据的每一行
+        for vcf_row in vcf_df.itertuples(index=False):
+            gt_line = gt.readline().strip()  # 每次读取一行 GT 数据
+            fields = list(map(str, vcf_row))  # 转为字符串列表
+            fields[9:] = gt_line.split()  # 注意此处与原始数据类型的一致性
+            out_vcf.write("\t".join(fields) + "\n")
 
-    # 读取 VCF 和 GT 数据
-    with open(output_vcf, "r") as vcf, open(gt_file, "r") as gt, open(output_filled_vcf, "w") as out_vcf:
-        for line in vcf:
-            if line.startswith("#"):  # 头部信息保持不变
-                out_vcf.write(line)
-            else:
-                gt_line = gt.readline().strip()  # 读取 GT 数据行
-                fields = line.strip().split("\t")  # 解析 VCF 行
-                fields[9:] = gt_line.split()  # **从第 10 列 (索引 9) 开始替换 GT**
-                out_vcf.write("\t".join(fields) + "\n")
-    #click.echo(f"✅ GT 数据填充完成，最终 VCF 文件已保存至 {output_filled_vcf}！")
 
 ####检测错误GT
 def detect_abnormal(out: str, config):
