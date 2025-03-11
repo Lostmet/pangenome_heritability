@@ -3,7 +3,7 @@
 from .config import Config
 from . import variant_processing
 from . import alignment
-from . import kmer
+from . import rSV
 from . import genotype
 from . import utils
 
