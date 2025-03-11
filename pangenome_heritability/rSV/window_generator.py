@@ -227,17 +227,7 @@ def compare_windows(ref_windows, var_windows):
 def process_sequences(file_name: str, sequences: List[Tuple[str, str]], genome_metadata: dict ,has_insertion_dict: Dict) -> Dict:
     """
     Process sequence data, including simple seq0/seq1 cases and complex multi-sequence cases.
-    
-    Args:
-        file_name: The name of the current file
-        sequences: List of sequence data [(seq_id, sequence), ...]
-        genome_metadata: Genome metadata
-        k: k-mer window size
-    
-    Returns:
-        Dict: A dictionary containing the comparison results
     """
-    #print(f"file_name: {file_name}, sequences:{sequences}")
     try:
        
         group_name = file_name.replace('_aligned.fasta', '').replace('_input.fasta', '')
@@ -293,21 +283,6 @@ def process_sequences(file_name: str, sequences: List[Tuple[str, str]], genome_m
         logger.error(f"Error processing sequences in {file_name}: {str(e)}")
         return {'file_name': file_name, 'results': [], 'error': str(e)}
 
-def compare_rSVs_all(all_rSV: Dict, number: int):
-    # number就是var的数量
-    # all_rSV:{'ref_windows': [{'pos': 906670, 'rSV': 'A'}...], ...,
-    # 'var_windows_2': [{'pos': 906670, 'rSV': 'A'}, {'pos': 906671, 'rSV': '-'}]
-    diff_number = 0
-    diff_array = []
-    meta_array = []
-    set_array = set() #用来检测是否有poly variant
-    length = len(all_rSV['ref_windows'])
-    for i in range(length):
-        ref = all_rSV['ref_windows'][i]['rSV']
-        set_array.add(ref) # 对集合
-        for n in range(number):
-            var = all_rSV[f'var_windows_{n + 1}'][i]['rSV']
-            
 
 
 
@@ -356,7 +331,6 @@ def process_fasta_files(
                 for error in errors:
                     f.write(f"{error}\n")
             logger.warning(f"Errors were logged to: {error_log}")
-        
         return {'processed': results, 'errors': errors}
     
     except Exception as e:
@@ -628,16 +602,19 @@ def nrSV_vcf_generate(nrSV_csv: str, config, nrSV_list, nSV_name: str):
             f_out.write(f"{chrom}\t{pos}\t{nrSV_id}\t{ref}\t{alt}\t.\t.\ttype=nrSV\tGT\t" + "\t".join(gt_values) + "\n")
     return nrSV_count
 
-def process_and_merge_results(input_csv: str, output_csv: str, threads: str, \
+def process_and_merge_results(results, output_csv: str, threads: str, \
                               has_insertion_dict: dict, cutoff: float, nrSV_csv: str):
     """
     Process and merge k-mer window results, removing '-' characters in the final results.
     """
     # has_insertion_dict:{'Group_2_1_1210539': True}
     try:
-        # 读取CSV文件
-        df = pd.read_csv(input_csv)
+        df = pd.DataFrame(results['processed'])
+    except Exception as e:
+        logger.error(f"Error saving results to CSV: {str(e)}")
+        raise
         
+    try:
         if df.empty:
             logger.warning("Input file is empty")
             return
