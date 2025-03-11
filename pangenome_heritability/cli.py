@@ -8,7 +8,7 @@ from .config import Config
 from .variant_processing.vcf_parser import process_variants, filter_vcf
 from .variant_processing.fasta_generator import generate_fasta_sequences
 from .alignment.mafft_wrapper import run_alignments 
-from .rSV.window_generator import process_fasta_files, save_rSV_results_to_csv, process_and_merge_results, parse_fasta_with_metadata, nrSV_vcf_generate
+from .rSV.window_generator import process_fasta_files, process_and_merge_results, parse_fasta_with_metadata, nrSV_vcf_generate
 from .rSV.comparison import process_comparison_results
 from .genotype.genotype_mapper import process_diff_array, process_vcf_to_x_matrix, compute_t_matrix, save_rSV_meta, extract_vcf_sample, vcf_generate, detect_abnormal, sample_name_contract
 from .utils.logging_utils import get_logger
@@ -145,14 +145,9 @@ def run_all(vcf: str, ref: str, cutoff: float, out: str, threads: int):
         click.echo("Scanning aligned FASTA files...")
         results = process_fasta_files(alignments_dir, has_insertion_dict, genome_metadata, max_workers=threads)
         click.echo("All FASTA files successfully scanned.")
-        
-        click.echo(f"Temporarily caching results in {intermediate_csv} for further processing...")
-        save_rSV_results_to_csv(results, intermediate_csv)
-        click.echo("Done.")
 
-        nrSV_list = process_and_merge_results(intermediate_csv, final_csv, threads, has_insertion_dict, cutoff, nrSV_csv)
+        nrSV_list = process_and_merge_results(results, final_csv, threads, has_insertion_dict, cutoff, nrSV_csv)
         click.echo(f"rSV processing completed. Results saved in {final_csv}")
-        os.remove(intermediate_csv)
         
         click.echo("[Step 4] Converting to VCF format and generating matrices...")
         if nrSV_list:
@@ -164,26 +159,24 @@ def run_all(vcf: str, ref: str, cutoff: float, out: str, threads: int):
         matrix_dir = Path(out) / "matrix_results"
         matrix_dir.mkdir(parents=True, exist_ok=True)
         click.echo("Generating matrices...")
-        click.echo("Creating D matrix...")
+        click.echo("Creating D matrices...")
         process_diff_array(final_csv, matrix_dir)
-        click.echo("Creating X matrix...")
+        click.echo("Creating X matrices...")
         sample_names = process_vcf_to_x_matrix(vcf, matrix_dir)
-        click.echo("Creating T matrix...")
+        click.echo("Creating T matrices...")
         compute_t_matrix(matrix_dir)
         click.echo("Matrices successfully generated in 'matrix_results'.")
 
         rSV_meta_csv = os.path.join(out, "rSV_meta.csv")
         gt_matrix = os.path.join(out, "GT_matrix.csv")
-        output_vcf = os.path.join(out, "rSV_without_genotype.vcf")
         rSV_vcf = os.path.join(out, "rSV.vcf")
 
         click.echo("Generating GT matrix and rSV.vcf...")
         rSV_count, total_groups = extract_vcf_sample(rSV_meta_csv, gt_matrix, matrix_dir, threads)
         click.echo(f"rSV count: {rSV_count:,}")
-        vcf_generate(sample_names, rSV_meta_csv, output_vcf, gt_matrix, rSV_vcf)
+        vcf_generate(sample_names, rSV_meta_csv, gt_matrix, rSV_vcf)
 
         try:
-            os.remove(output_vcf)
             os.remove(gt_matrix)
         except:
             pass
@@ -253,29 +246,27 @@ def make_meta(vcf: str, ref, _, out: str, threads: int):
     save_rSV_meta(final_csv, out, threads)  # Generates rSV_meta for reviewing ref, alt, etc.
 
     click.echo("2. Creating matrices...")
-    click.echo("a. Generating D matrix...")
+    click.echo("a. Generating D matrices...")
     process_diff_array(final_csv, matrix_dir)
     
-    click.echo("b. Generating X matrix...")
+    click.echo("b. Generating X matrices...")
     sample_names = process_vcf_to_x_matrix(vcf, matrix_dir)
     
-    click.echo("c. Generating T matrix...")
+    click.echo("c. Generating T matrices...")
     compute_t_matrix(matrix_dir)
     click.echo("D, X, and T matrices successfully generated in 'matrix_results' directory.")
     
     rSV_meta_csv = os.path.join(out, "rSV_meta.csv")
     gt_matrix = os.path.join(out, "GT_matrix.csv")
-    output_vcf = os.path.join(out, "rSV_without_genotype.vcf")
     rSV_vcf = os.path.join(out, "rSV.vcf")
     
     click.echo("3. Generating GT matrix and rSV.vcf...")
     rSV_count, total_groups = extract_vcf_sample(rSV_meta_csv, gt_matrix, matrix_dir, threads)  # Generates GT matrix for VCF
     click.echo(f"Total rSV count: {rSV_count:,}")
     
-    vcf_generate(sample_names, rSV_meta_csv, output_vcf, gt_matrix, rSV_vcf)  # Generates final rSV.vcf
+    vcf_generate(sample_names, rSV_meta_csv, gt_matrix, rSV_vcf)  # Generates final rSV.vcf
     
     try:
-        os.remove(output_vcf)
         os.remove(gt_matrix)
     except:
         pass
