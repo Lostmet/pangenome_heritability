@@ -22,25 +22,18 @@ conda install conda-forge::mafft
 ## 软件输入
 
 - `VCF`文件及其索引文件：仅包含结构变异（SVs），`.vcf`文件或`.vcf.gz`文件以及其索引文件
-- `FASTA`文件：包含SVs对应染色体的FASTA序列文件（即.fa文件或.fasta文件）
+- `FASTA`文件：包含SVs对应染色体的FASTA序列文件（即`.fa`文件或`.fasta`文件）
 
 ## 软件主要输出
-### 1. 文件主要输出：
-- `alignment`文件夹：存储各个重叠组别的align结果，详情请看文末对文件夹结构的详细介绍
+- `alignment_error_logs`文件夹：MAFFT运行的错误log会存放在该文件夹
+- `alignment_results`文件夹：存储各个重叠组别的align结果，详情请看文末对文件夹结构的详细介绍
 - `matrix_results`文件夹：存储各个重叠组别的矩阵输出结果
+- `merged_rSVs.csv`：rSV的中间缓存，如`run-all`功能中断，可从该文件中途运行，不必重新执行`run-all`
 - `rSV.vcf`文件：重叠的SV被细化成为rSV（refined SV）的vcf文件
 - `rSV_meta.csv`文件：rSV具体的对应的pos，ref，alt细节
-### 2. 命令行输出：
-- `run-all`命令：运行全部
-- 示例：（还没写）
-
-## 命令概览
-
-该工具提供了以下命令：
-- `process-vcf`：处理VCF文件，分组重叠变异，生成无重叠的VCF文件。
-- `run-all`：在一个命令中运行整个工作流。
-- `make-meta`: 在有out_final_results.csv无rSV_meta.csv的情况下，继续run-all的步骤
-- `make-vcf`：在有rSV_meta.csv的情况下，继续run-all的步骤
+- `nrSV_meta.csv`文件：nrSV（non-overlapped rSV）, 即rSV中没有成功对齐，在给定阈值`cutoff`（默认0.9）的重叠度之下的片段对应的pos, ref, alt细节
+- `nSV.vcf`文件：没有重叠的SV与nrSV的vcf文件
+- `*.log`文件：输出的log文件，包括了运行时间，总处理的SV数量，INV数量，nSV数量，重叠SV数量，重叠率，总分组数量和rSV的总数信息
 
 ## 注意事项
 
@@ -71,36 +64,49 @@ ACTAGGCTAGCTAGCTAGCTAGCTAGCTAGCTAGCTAGCTAGCTAGCTAG
 >2
 TGCATGCATGCATGCATGCATGCATGCATGCATGCATGCATGCATGCATG
 ```
-
+## 命令概览
+该工具提供了以下命令：
+- `process-vcf`：处理VCF文件，分组重叠变异，仅生成无重叠的VCF文件。
+- `run-all`：在一个命令中运行整个工作流。（主命令）
+- `make-meta`: 在有merged_rSVs.csv的情况下若运行中断，可由此继续`run-all`的步骤
 ## 快速使用示例
 ```bash
 panherit process-vcf \
     --vcf test.vcf.gz \
     --ref test.fasta \
     --out nSV_test \
-    --threads 8
+    --threads 10
 ```
-
 选项：
 - `--vcf`：输入包含结构变异的VCF文件
 - `--ref`：参考基因组FASTA文件
 - `--out`：处理后的变异和FASTA文件的输出目录
-- `--threads`：并行线程数（默认：8）
+- `--threads`：并行线程数（默认：10）
 
 ```bash
 panherit run-all \
     --vcf test.vcf.gz \
     --ref test.fasta \
+    --cutoff 0.9 \
     --out output_directory \
     --threads 8
 ```
-
 选项：
 - `--vcf`：输入包含结构变异的VCF文件
 - `--ref`：参考基因组FASTA文件
+- `--cutoff`：低于该重叠度的片段不会被当作rSV（默认0.9）
 - `--out`：处理后的变异和FASTA文件的输出目录
-- `--threads`：并行线程数（默认：8）
+- `--threads`：并行线程数（默认：10）
 
+```bash
+panherit make-meta \
+    --vcf test.vcf.gz \
+    --ref test.fasta \
+    --cutoff 0.9 \
+    --out output_directory \
+    --threads 8
+```
+同上
 ## 环境要求
 - Python 3.8+
 - MAFFT V7.526
@@ -112,6 +118,98 @@ panherit run-all \
   - tqdm
 
 ---
+## 代码思路
+### 代码主要达成效果
+<p align="center">
+<img src="https://github.com/user-attachments/assets/69c43992-af28-4669-a35e-198771986241" width="800">
+</p>
+
+即，将重叠的SV通过对齐与窗口判断等手段将其划分为更加细致的SV（rSV）
+### [Step 1] Processing VCF and generating FASTA...
+<p align="center">
+<img src="https://github.com/user-attachments/assets/40ad6400-d640-4518-8775-644a6d93972f" width="500">
+</p>
+
+整体思路是，将`INV`扔到`nSV.vcf`里面，再利用`ref, alt, pos`等信息判断SV是否重叠，未重叠的给到`nSV.vcf`，储存到变量`single_group`中，使用`filter_vcf`函数进行vcf文件生成。重叠的储存到变量`multi_group`中，利用pos信息进行pre-align，结果用`generate_fasta_sequences`储存到`variants_pre_aligned.fasta`文件中供下一步使用。
+
+### [Step 2] Running alignments...
+<p align="center">
+<img src="https://github.com/user-attachments/assets/46d21d26-2a96-42d3-ab11-13f13d8cc13c" width="600">
+</p>
+
+这一步的算法下，只有`group has insertions with the same POS（poly-ins）`的情况下，才会对其变异组进行切片和MAFFT align。您可以通过比对`input`和`aligned`来检查MAFFT的比对情况。不含`poly-ins`的情况会被直接保存为`aligned.fasta`。可能的文件夹结果：
+
+<p align="center">
+<img src="https://github.com/user-attachments/assets/3fdbbaa0-3274-4e7e-8d20-967420563934" width="300">
+</p>
+
+其中`Group`后先是Group对应的`chrom`，后是group的`number`，然后是group第一个variant的`pos`。即：
+- 有`input_origin.fasta`后缀的说明该组别有`poly-ins`即多个同pos的insertion的情况。
+- `input_sliced_X.fasta`指第`X`个切片输入，对应的`aligned_sliced_X.fasta`指对应的MAFFT的align结果
+- `aligned.fasta`为最终结果
+### [Step 3] Generating rSVs...
+#### 总步骤
+<p align="center">
+<img src="https://github.com/user-attachments/assets/544c06a0-1415-4518-92d3-73485fcbbe06" width="900">
+</p>
+
+#### 普通情况（无`poly-ins`）
+
+<p align="center">
+  <img src="https://github.com/user-attachments/assets/d2827349-1ca6-4c04-a4d4-3adf087ff458" width="600">
+</p>
+<p align="center"><b>Figure 1:</b> 普通情况下的rSV生成的流程图，其中del = deletion, ins = insertion</p>
+
+
+- 首先对对齐后的每个纵向的窗口进行扫描
+- 对变异（如`del`和`ins`）和参考序列`Ref`进行比对，相同则在`diff`中标记为`0`，不同则标记为`1`
+- 对相邻的列进行合并，得到`diff_array`
+- 划分最终的`rSV_meta`，即rSV对应的`pos, ref, alt`
+
+#### 特殊情况（有`poly-ins`，并且有对齐后的变异重叠度未达到阈值）
+<p align="center">
+  <img src="https://github.com/user-attachments/assets/293738ae-9093-42bf-8237-977208a66e2a" width="600">
+</p>
+<p align="center"><b>Figure 1:</b> 特殊情况下的rSV生成的流程图，其中del = deletion, ins = insertion</p>
+
+- 不同点在于，在扫描出现`poly-alt`，即初步merge后仍出现多alt的情况，如果重叠度没有达到阈值，则会被丢入`nrSV_meta.csv`中，最终被送入`nSV.vcf`
+### [Step 4] Converting to VCF format and generating matrices...
+<p align="center">
+  <img src="https://github.com/user-attachments/assets/c1bf08e0-8566-4f56-ac8e-5d087b3e79b0" width="1200">
+</p>
+<p align="center"><b>Figure 1:</b> Step 4 总流程图</p>
+
+#### Generating rSV_meta.csv with meta information (positions, reference, alternate alleles)...
+- 即提取`merged_rSVs.csv`的`meta`信息，对`pos, ref, alt`进行标准化的过程
+<p align="center">
+  <img src="https://github.com/user-attachments/assets/45d7e0f1-80df-46a1-80a1-32260e13ee6f" width="1200">
+</p>
+<p align="center"><b>Figure 1:</b> rSV_meta.csv的示例</p>
+
+#### Generating matrices...
+##### D matrices（SV与rSV的对应关系矩阵）
+<p align="center">
+  <img src="https://github.com/user-attachments/assets/911a5ca9-9f2a-4ef0-9b7e-941940a95bbe" width="600">
+</p>
+<p align="center"><b>Figure 1:</b> D-matrix生成示例</p>
+
+- 即从每一组的`merged_results.csv`中合并后的`diff_array`摘下来
+- 可以看到每个`SV`都可以当作`rSV`的线性组合
+#### X matrices（SV与样本基因型的对应关系矩阵）
+<p align="center">
+  <img src="https://github.com/user-attachments/assets/5d460532-493b-43f9-9194-68501cbf12a1" width="800">
+</p>
+<p align="center"><b>Figure 1:</b> X-matrix生成示例（Ind.=Individual）</p>
+
+- 从每一组对应的`D-matrix`找到`<input>.vcf`文件中对应的SV的样本基因型数据，并进行对应编码
+- 注意：`./.`编码为`-9`仅为图例，实际代码编码为`-999`
+#### T matrices（rSV与样本基因型的对应关系矩阵）
+<p align="center">
+  <img src="https://github.com/user-attachments/assets/acd87cf4-7d83-43fa-855b-06b5101ed3c2" width="900">
+</p>
+<p align="center"><b>Figure 1:</b> T-matrix生成示例（Ind.=Individual）</p>
+
+- 显然的，`T-matrix`可以从同组的`D-matrix`和`X-matrix`运算得到，而`genotype(GT)`矩阵，则为`VCF(v4.2)`格式的GT矩阵
 
 ## 文件夹结构
 
