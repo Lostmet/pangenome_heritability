@@ -140,7 +140,8 @@ panherit make-meta --vcf test.vcf.gz --ref test.fasta --cutoff 0.9 --out output_
 即，通过对齐与窗口判断等手段，将重叠的SV划分为更加细致的SV（rSV）。
 
 ---
-
+***如果您觉得内容有点复杂，不用担心！直接运行 run-all 就可以完成所有步骤，拿到细分之后的`rSV.vcf`文件，无需深入了解细节。***
+---
 ## [Step 1] Processing VCF and Generating FASTA
 <p align="center">
 <img src="https://github.com/user-attachments/assets/40ad6400-d640-4518-8775-644a6d93972f" width="500">
