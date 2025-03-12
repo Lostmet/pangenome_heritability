@@ -211,27 +211,49 @@ panherit make-meta \
 
 - 显然的，`T-matrix`可以从同组的`D-matrix`和`X-matrix`运算得到，而`genotype(GT)`矩阵，则为`VCF(v4.2)`格式的GT矩阵
 
+### Generating rSV.vcf...
+<p align="center">
+  <img src="https://github.com/user-attachments/assets/5f8517b2-1d0e-4239-91cd-cdc3de10e57d" width="900">
+</p>
+<p align="center"><b>Figure 1:</b> rSV.vcf生成示例（Ind.=Individual）</p>
+
+- 用前文的`rSV_meta`和`GT-matrix`就可以生成了
+
+
+
+
+
 ## 文件夹结构
 
 ### 1. 主文件夹
-- **a. Group_D_matrix.csv**：Group_"chrom"_"number"_"pos"，D矩阵，rSV-SV
-- **b. Group_T_matrix.csv**：对应的T矩阵，rSV-samples
-- **c. Group_X_matrix.csv**：对应的X矩阵，SV-samples
-- **d. GT_matrix.csv**：合并后的T矩阵（rsv.vcf的GT矩阵，格式为1/0类型）
-- **e. output_final_results.csv**：储存rsv正确的ref和alt，同一个rsv会有多个alt
-- **f. output.vcf**：无GT矩阵的VCF文件
-- **g. ⭐ pangenome_rSV.vcf**：最终输出的rsv的VCF文件
-- **h. comparison_results.csv**：k-mer比对的过程文件
-- **i. ⭐ rsv_meta.csv**：填充入VCF文件中的ID，pos，ref，alt的初始文件
-- **j. T_matrix_abnormal_all.csv**：rSV-sample矩阵（T矩阵）中异常值占非零正常值的比例
-- **k. T_matrix_abnormal.csv**：具体group_name下的，每个T矩阵中非零值的数目，异常值的数目和比例
-- **l. variants_extended.fasta**：按POS截取并分组的FASTA文件汇总
+- **a. merged_rSV.csv**：储存rsv正确的ref和alt，同一个rsv会有多个alt
+- **b. ⭐ rSV.vcf**：最终输出的rsv的VCF文件
+- **c. ⭐ rsv_meta.csv**：填充入VCF文件中的ID，pos，ref，alt的初始文件
+- **d. nSV.vcf**：最终输出的nSV的VCF文件
+- **e. nrSV_meta.csv**: 可查阅nrSV(non-overlapped rSV)的信息（ref，pos，alt）
+- **f. variants_pre_aligned.fasta**：按POS进行预比对过后的FASTA文件汇总
+- **g. X.log**：log信息，示例：
+```bash
+2025-03-11 23:21:25 - INFO - Total runtime: 3:47:19
+2025-03-11 23:21:25 - INFO - Total variants: 102,882
+2025-03-11 23:21:25 - INFO - INV count: 330
+2025-03-11 23:21:25 - INFO - nSV count: 73,738
+2025-03-11 23:21:25 - INFO - Overlapping SVs: 29,144
+2025-03-11 23:21:25 - INFO - Overlap percentage: 28.33%
+2025-03-11 23:21:25 - INFO - Total variant groups: 8,119
+2025-03-11 23:21:25 - INFO - Final rSV count: 49,658
+```
 
 ### 2. 子文件夹：alignment_results
-- **a. Group_input_origin.fasta**：Group_"chrom"_"number"_"pos"，从variants_extended.fasta截取并简化的FASTA文件，作为比对的输入
+- **a. Group_input_origin.fasta**：Group_"chrom"_"number"_"pos"，从variants_pre_aligned.fasta截取并简化的FASTA文件，作为比对的输入
 - **b. Group_aligned.fasta**：上述文件经过比对后的结果文件，用于下一步k-mer的生成
 - **c. Group_input_spliced.fasta**：同一位置的插入序列的切片
 - **d. Group_aligned_spliced.fasta**：切片完成后，MAFFT软件比对的结果，对应的无切片后缀的aligned.fasta文件就是合并后的最终比对结果
 
-### 3. 子文件夹：logs
-- 错误信息部分会生成在此文件夹中
+### 3. 子文件夹：alignment_error_logs
+- MAFFT比对的错误信息会生成在此文件夹中
+
+### 4. 子文件夹：matrix_results
+- **a. Group_D_matrix.csv**：Group_"chrom"_"number"_"pos"，D矩阵，rSV-SV
+- **b. Group_T_matrix.csv**：对应的T矩阵，rSV-samples
+- **c. Group_X_matrix.csv**：对应的X矩阵，SV-samples
