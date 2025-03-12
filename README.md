@@ -68,7 +68,7 @@ conda install conda-forge::mafft
 
 ## 📜 VCF 文件示例
 
-⚠ **VCF 文件必须压缩 (`.vcf.gz`)，并有索引文件 (`.tbi`)**
+⚠ **VCF 文件必须压缩 (`.vcf.gz`)，并有索引文件 (`.tbi`或`.csi`)**
 ```bash
 bcftools index your_vcf_file.vcf.gz
 ```
@@ -274,7 +274,7 @@ panherit make-meta --vcf test.vcf.gz --ref test.fasta --cutoff 0.9 --out output_
 | `nSV.vcf` | 无重叠 SV 变异的 VCF 文件 |
 | `nrSV_meta.csv` | 未达到重叠度的 rSV 信息 |
 | `variants_pre_aligned.fasta` | 预比对的 FASTA 文件 |
-| `X.log` | 运行日志 |
+| `*.log` | 运行日志 |
 
 ### **2️⃣ alignment_results 文件夹**
 | **文件** | **说明** |
