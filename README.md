@@ -108,7 +108,7 @@ panherit run-all --vcf test.vcf.gz --ref test.fasta --cutoff 0.9 --out output_di
 ```
 
 ####  **恢复运行**
-如果主功能运行时间过长导致中断，且生成了`merged_rSVs.csv`，您可以通过以下步骤恢复运行。<br>
+如果主功能运行时由于运行时间过长等原因被中断，且生成了`merged_rSVs.csv`，您可以通过以下步骤恢复运行。<br>
 **请注意：只需要将`run-all`改为`make-meta`，不要改变输出文件夹名**
 ```bash
 panherit make-meta --vcf test.vcf.gz --ref test.fasta --cutoff 0.9 --out output_directory --threads 8
