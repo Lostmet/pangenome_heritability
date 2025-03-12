@@ -276,6 +276,17 @@ panherit make-meta --vcf test.vcf.gz --ref test.fasta --cutoff 0.9 --out output_
 | `variants_pre_aligned.fasta` | 预比对的 FASTA 文件 |
 | `*.log` | 运行日志 |
 
+log示例：
+```bash
+2025-03-11 23:21:25 - INFO - Total runtime: 3:47:19
+2025-03-11 23:21:25 - INFO - Total variants: 102,882
+2025-03-11 23:21:25 - INFO - INV count: 330
+2025-03-11 23:21:25 - INFO - nSV count: 73,738
+2025-03-11 23:21:25 - INFO - Overlapping SVs: 29,144
+2025-03-11 23:21:25 - INFO - Overlap percentage: 28.33%
+2025-03-11 23:21:25 - INFO - Total variant groups: 8,119
+2025-03-11 23:21:25 - INFO - Final rSV count: 49,658
+```
 ### **2️⃣ alignment_results 文件夹**
 | **文件** | **说明** |
 |---------|---------|
@@ -291,6 +302,8 @@ panherit make-meta --vcf test.vcf.gz --ref test.fasta --cutoff 0.9 --out output_
 | `Group_T_matrix.csv` | T 矩阵（rSV-样本 关系） |
 | `Group_X_matrix.csv` | X 矩阵（SV-样本 关系） |
 
+### **4️⃣ alignment_error_log 文件夹**
+存放MAFFT运行错误log，正常为空文件夹
 ---
 
 ## 🎯 总结
