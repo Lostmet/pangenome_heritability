@@ -18,9 +18,9 @@ setup(
     ],
 
     },
-    author="PeixiongYuan",
-    author_email="yuanpeixiong@westlake.edu.cn",
-    description="A tool for estimating heritability using pangenome structural variants",
+    author="PeixiongYuan & JuntengWu",
+    author_email="yuanpeixiong@westlake.edu.cn & fenglostmet@tju.edu.cn",
+    description="A tool for refined structural variants",
     long_description=open("README.md").read(),
     long_description_content_type="text/markdown",
     url="https://github.com/PeixiongYuan/pangenome_heritability",
