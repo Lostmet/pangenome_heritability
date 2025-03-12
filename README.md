@@ -303,7 +303,9 @@ log示例：
 | `Group_X_matrix.csv` | X 矩阵（SV-样本 关系） |
 
 ### **4️⃣ alignment_error_log 文件夹**
+
 存放MAFFT运行错误log，正常为空文件夹
+
 ---
 
 ## 🎯 总结
