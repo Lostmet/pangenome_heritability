@@ -31,6 +31,41 @@ def cli():
     """A Python tool for refined Structured Variants analysis."""
     pass
 
+@cli.command("align-time")
+@click.option('--vcf', required=True, help='Input VCF file')
+@click.option('--ref', required=True, help='Reference FASTA file')
+@click.option('--cutoff', default=0.9, type=float, help="Threshold for assigning poly-alts to separate rSVs.")
+@click.option('--out', required=True, help='Output directory for processed variants and FASTA files')
+@click.option('--threads', default=1, type=int, help='Number of threads')
+def align_time(vcf: str, ref: str, cutoff, out: str, threads: int):
+    """Test the time of alignment"""
+    start_time = time.time()
+    click.echo("[Step 1] Processing VCF and generating FASTA...")
+    config = Config(vcf_file=vcf, ref_fasta=ref, output_dir=out, threads=threads)
+    grouped_variants_list, _, _, _, \
+    _, _, _, \
+    _, _, _, _ = process_variants(config)
+
+    grouped_variants_dict = {}
+    for group in grouped_variants_list:
+        grouped_variants_dict.setdefault(group.chrom, []).append(group)
+    total_groups = sum(len(groups) for groups in grouped_variants_dict.values())
+    click.echo(f"Overlapping variants grouped: {total_groups:,} groups")
+
+    fasta_path, has_insertion_dict, poly_ins_list = generate_fasta_sequences(config, grouped_variants_dict, total_groups)
+    click.echo(f"FASTA file created: {fasta_path}")
+
+    click.echo("[Step 2] Running alignments...")
+    alignments_config = Config(grouped_variants_file=fasta_path, ref_fasta=ref, output_dir=out, threads=threads)
+    run_alignments(alignments_config, fasta_path, has_insertion_dict, poly_ins_list)
+    click.echo("Alignments completed. Results saved in 'alignment_results' directory.")    
+    end_time = time.time()
+    total_time = end_time - start_time
+    hours, remainder = divmod(total_time, 3600)
+    minutes, seconds = divmod(remainder, 60)
+    click.echo(f"Total runtime: {int(hours)}:{int(minutes):02d}:{int(seconds):02d}")
+
+
 @cli.command("process-vcf")
 @click.option('--vcf', required=True, help='Input VCF file')
 @click.option('--ref', required=True, help='Reference FASTA file')
