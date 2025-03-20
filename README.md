@@ -1,7 +1,7 @@
 # Pangenome Heritability Tool
 
 🔬 **Pangenome Heritability Tool** 是一个用于处理 **Structured Variants (SVs)** 并生成 **VCF (v4.2) 格式**文件的 Python 工具。  
-它通过 **序列比对、窗口扫描和合并**，生成 **refined SVs (rSVs)** 并转换为 VCF 格式，帮助下游分析。
+它通过 **序列比对、窗口扫描和合并**，生成 **refined SVs (rSVs)** 并转换为 VCF 格式，帮助下游分析。该软件主要用于处理 `deletion`（缺失） 和 `insertion`（插入） 变异。由于 `inversion`（倒位） 在数据中占比较低，因此本软件暂不进行处理，以优化计算效率和数据处理的针对性。
 
 ---
 
