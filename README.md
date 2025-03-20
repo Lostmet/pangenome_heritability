@@ -140,7 +140,7 @@ panherit make-meta --vcf test.vcf.gz --ref test.fasta --cutoff 0.9 --out output_
 即，通过对齐与窗口判断等手段，将重叠的SV划分为更加细致的SV（rSV）。
 
 ---
-***如果您无需深入了解算法细节，只需确保文件格式正确，直接运行 `run-all` 即可完成所有步骤，并生成细分后的 `rSV.vcf` 文件。若希望进一步了解算法实现，请参考：[Algorithmic Logic of rSV Software](https://github.com/Lostmet/Algorithmic_Logic_of_rSV_Software)。***
+*如果您无需深入了解算法细节，只需确保文件格式正确，直接运行 `run-all` 即可完成所有步骤，并生成细分后的 `rSV.vcf` 文件。若希望进一步了解算法实现，请参考：[Algorithmic Logic of rSV Software](https://github.com/Lostmet/Algorithmic_Logic_of_rSV_Software)。*
 ---
 
 ## 📂 文件结构概览
