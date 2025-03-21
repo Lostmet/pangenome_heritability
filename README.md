@@ -1,7 +1,10 @@
 # Pangenome Heritability Tool
 
-🔬 **Pangenome Heritability Tool** 是一个用于处理 **Structured Variants (SVs)** 并生成 **VCF (v4.2) 格式**文件的 Python 工具。  
-它通过 **序列比对、窗口扫描和合并**，生成 **refined SVs (rSVs)** 并转换为 VCF 格式，帮助下游分析。该软件主要用于处理 `deletion`（缺失） 和 `insertion`（插入） 变异。由于 `inversion`（倒位） 在数据中占比较低，因此本软件暂不进行处理，以优化计算效率和数据处理的针对性。
+🔬 **Pangenome Heritability Tool** 是一个用于结构变异（Structural Variants, SVs）处理的 Python 工具，支持生成符合 VCF v4.2 格式的变异数据。  
+该工具通过序列比对、窗口扫描和合并流程，构建 refined SVs（rSVs），主要聚焦于 `DEL`（缺失）和 `INS`（插入）类型。
+
+由于 `INV`（倒位）在真实数据中占比极低，当前版本未处理该类型，以提升效率与实用性。例如，Zhou 等人在番茄泛基因组研究中报告 `INV` 仅占 SV 的 **0.32%**（Zhou et al., *Nature*, 2022, 606: 527–534）。
+
 
 ---
 
@@ -191,5 +194,9 @@ log示例：
 ## 🎯 总结
 **Pangenome Heritability Tool** 提供了一整套 **SV 处理、比对和转换 VCF** 的工具，适用于大规模基因组分析。  
 请确保格式正确，并根据需要选择 `process-vcf`、`run-all` 或 `make-meta` 进行处理。
+
+---
+## 📕 参考文献
+1.	Zhou, Y., et al., Graph pangenome captures missing heritability and empowers tomato breeding. Nature, 2022. 606(7914): p. 527-534.
 
 ---
