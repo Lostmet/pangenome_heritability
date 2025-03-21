@@ -207,14 +207,10 @@ def run_all(vcf: str, ref: str, cutoff: float, out: str, threads: int):
         rSV_vcf = os.path.join(out, "rSV.vcf")
 
         click.echo("Generating GT matrix and rSV.vcf...")
-        rSV_count, total_groups = extract_vcf_sample(rSV_meta_csv, gt_matrix, matrix_dir, threads)
+        rSV_count, total_groups, gt_buffer = extract_vcf_sample(rSV_meta_csv, gt_matrix, matrix_dir, threads)
         click.echo(f"rSV count: {rSV_count:,}")
-        vcf_generate(sample_names, rSV_meta_csv, gt_matrix, rSV_vcf)
+        vcf_generate(sample_names, rSV_meta_csv, gt_buffer, rSV_vcf)
 
-        try:
-            os.remove(gt_matrix)
-        except:
-            pass
         click.echo(f"{rSV_vcf} successfully generated!")
         click.echo("Pipeline execution completed!")
 
@@ -296,15 +292,12 @@ def make_meta(vcf: str, ref, _, out: str, threads: int):
     rSV_vcf = os.path.join(out, "rSV.vcf")
     
     click.echo("3. Generating GT matrix and rSV.vcf...")
-    rSV_count, total_groups = extract_vcf_sample(rSV_meta_csv, gt_matrix, matrix_dir, threads)  # Generates GT matrix for VCF
-    click.echo(f"Total rSV count: {rSV_count:,}")
-    
-    vcf_generate(sample_names, rSV_meta_csv, gt_matrix, rSV_vcf)  # Generates final rSV.vcf
-    
-    try:
-        os.remove(gt_matrix)
-    except:
-        pass
+    rSV_count, total_groups, gt_buffer = extract_vcf_sample(rSV_meta_csv, gt_matrix, matrix_dir, threads)
+    click.echo(f"rSV count: {rSV_count:,}")
+    vcf_generate(sample_names, rSV_meta_csv, gt_buffer, rSV_vcf)
+
+    click.echo(f"{rSV_vcf} successfully generated!")
+    click.echo("Pipeline execution completed!")
     click.echo(f"{rSV_vcf} successfully generated!")
     click.echo("All steps completed successfully!")
     
