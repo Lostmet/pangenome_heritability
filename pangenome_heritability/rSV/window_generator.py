@@ -634,7 +634,8 @@ def process_and_merge_results(results, output_csv: str, threads: str, \
             with ProcessPoolExecutor(max_workers=threads) as executor:
                 future_to_group = {executor.submit(process_group, chrom, group, has_insertion_dict, cutoff): chrom for chrom, group in grouped}
                 # 遍历每个任务的结果
-                for future in as_completed(future_to_group):
+            for future in as_completed(future_to_group):
+                try:
                     result, nrSV_result, nrSV_dict = future.result()
                     if result:
                         merged_results.extend(result)
@@ -642,8 +643,12 @@ def process_and_merge_results(results, output_csv: str, threads: str, \
                         nrSV_merged_results.extend(nrSV_result)
                     if nrSV_dict:
                         nrSV_list.append(nrSV_dict)
-                    pbar.update(1)  # 每个任务完成后更新进度条
-        
+                except Exception as e:
+                    group = future_to_group[future]
+                    print(f"❌ Error in processing group {group}: {e}")
+                    print(f"💡 Tip: Please check whether the sequences in group {group} are normalized properly.")
+                pbar.update(1)
+
         if not merged_results:
             logger.warning("No valid merged results")
             return
@@ -763,7 +768,7 @@ def retain_changed_columns_group_with_meta(
         raise ValueError(f"Mismatch between the lengths of difference arrays and metadata arrays, meta_data_pos:{meta_rows[0][0]['pos']}")
     # 调试print meta_rows
     # print(f"Mismatch between the lengths of difference arrays and metadata arrays, meta_data_pos:{meta_rows[0][0]['pos']}")
-
+    # print(f'正在处理:{chrom}')
     num_rows = len(rows)
     num_cols = len(rows[0])
     #print(f'num_rows:{num_rows}, num_cols:{num_cols}')
