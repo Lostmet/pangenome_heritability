@@ -869,7 +869,7 @@ def extract_vcf_sample(input_csv: str, output_gt: str, out: str, threads: int):
 
     # Stage 3: 错误处理和输出
     valid_data = [data for data in gt_matrix if data is not None]
-    pd.DataFrame(valid_data).to_csv(output_gt, index=False, header=False, sep="\t")
+    gt_buffer = pd.DataFrame(valid_data)
     
     # 错误输出
     if error_log:
@@ -880,16 +880,17 @@ def extract_vcf_sample(input_csv: str, output_gt: str, out: str, threads: int):
 
 
     click.echo(f"GT matrix successfully generated with {len(valid_data)} valid records.")
-    return len(valid_data), group_count
+    return len(valid_data), group_count, gt_buffer
 # 注：需要保留原convert_gt和其他辅助函数的实现
 
 
 ########生成rSV的VCF
 
-def vcf_generate(sample_names: list, csv_file: str, gt_file: str, output_filled_vcf: str):
+def vcf_generate(sample_names: list, csv_file: str, gt_buffer: str, output_filled_vcf: str):
     # 读取 CSV 文件
     df = pd.read_csv(csv_file)
-
+    # 将 GT DataFrame 转为 list of list（每一行是等价的）
+    gt_list = gt_buffer.values.tolist()  # 每一行是个列表，等价于 split()
     # 解析 group_name 以提取 #CHROM 和编号
     vcf_data = []
 
@@ -920,7 +921,7 @@ def vcf_generate(sample_names: list, csv_file: str, gt_file: str, output_filled_
     vcf_df.sort_values(by=["#CHROM", "POS"], inplace=True)
     #click.echo(vcf_df.columns)
     """ 合并 VCF 数据和 GT 数据，直接写入最终文件 """
-    with open(output_filled_vcf, "w") as out_vcf, open(gt_file, "r") as gt:
+    with open(output_filled_vcf, "w") as out_vcf:
         # 写入头部信息
         out_vcf.write("##fileformat=VCFv4.2\n")
         out_vcf.write('##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">\n')
@@ -928,10 +929,10 @@ def vcf_generate(sample_names: list, csv_file: str, gt_file: str, output_filled_
         out_vcf.write(header + "\n")
 
         # 遍历输入数据的每一行
-        for vcf_row in vcf_df.itertuples(index=False):
-            gt_line = gt.readline().strip()  # 每次读取一行 GT 数据
-            fields = list(map(str, vcf_row))  # 转为字符串列表
-            fields[9:] = gt_line.split()  # 注意此处与原始数据类型的一致性
+        for idx, vcf_row in enumerate(vcf_df.itertuples(index=False)):
+            fields = list(map(str, vcf_row))          # VCF前9列
+            gt_fields = list(map(str, gt_list[idx]))  # GT字段，转换为str
+            fields[9:] = gt_fields                    # 替换掉后9列
             out_vcf.write("\t".join(fields) + "\n")
 
 
