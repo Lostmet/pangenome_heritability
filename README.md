@@ -58,12 +58,12 @@ conda install conda-forge::mafft
 - **VCF 和参考 FASTA 文件必须使用数字染色体标识符**
   - 例如：`1`、`2`、`3`（染色体），`23`（X 染色体），`24`（Y 染色体）
   - **不能** 使用 `chr1`、`chrX` 等格式
-- **SV 格式需标准化**：
+- **SV 格式需标准化（左对齐）**：
   - **Deletion（缺失）** → `sv1` 示例
   - **Insertion（插入）** → `sv2` 示例
   - **Inversion（倒位）** → `sv3` 示例
 - **FORMAT 字段仅包含 `GT`**
-  - 若不符合，请使用 `bcftools norm` 进行标准化
+  - 若不符合，请进行标准化
 - **建议分染色体运行 rSV 识别**
   - 避免计算性能瓶颈
 
@@ -72,9 +72,6 @@ conda install conda-forge::mafft
 ## 📜 VCF 文件示例
 
 ⚠ **VCF 文件必须压缩 (`.vcf.gz`)，并有索引文件 (`.tbi`或`.csi`)**
-```bash
-bcftools index your_vcf_file.vcf.gz
-```
 
 示例 VCF：
 ```bash
