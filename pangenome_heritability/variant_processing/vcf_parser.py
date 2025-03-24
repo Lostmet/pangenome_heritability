@@ -70,6 +70,8 @@ def process_variants(config) -> List[VariantGroup]:
     all_variants = []
     single_group = [] 
     inv_group = [] # 加一个inv_group
+    var_not_align_count = 0 # 加一个没有左对齐的数量的count
+    var_not_standard_count = 0 # 加一个没标准化的count
     logger.info("Reading variants from VCF...")
     with tqdm(desc="Reading variants",unit='variants') as pbar:
         try:
@@ -89,13 +91,49 @@ def process_variants(config) -> List[VariantGroup]:
                     )
                     inv_group.append(inv) # 扔到新的group里面
                 else:
+                    # 修改pos，ref和alt，左对齐
+                    chrom = record.chrom
+                    start = record.pos
+                    pos = start
+                    ref = record.ref
+                    alt = list(record.alts)
+                    samples={s: record.samples[s]['GT'] for s in record.samples}
+                    end = pos + abs(len(ref)-len(alt[0])) -1
+                    ref_len = len(ref)
+                    alt_len = len(alt[0])
+                    if ref_len != 1 and alt_len != 1: # 没有左对齐显然
+                        if var_not_align_count == 0:
+                            click.echo(f"⚠️Warning: Unaligned variant detected, chrom: {chrom}, pos: {pos}. Please check; the software will attempt to automatically left-align.")
+                        else:
+                            click.echo(f"Error of unaligned, chrom: {chrom}, pos: {pos}")
+                        var_not_align_count += 1
+                        if ref_len == alt_len:
+                            pos += ref_len - 1
+                            ref = ref[0]
+                            alt = list(alt[0][0])
+                        elif ref_len < alt_len:
+                            pos += ref_len - 1
+                            ref = ref[0]
+                            alt = list(alt[0][ref_len:])
+                        elif ref_len > alt_len:
+                            pos += alt_len - 1
+                            alt = list(alt[0][0])
+                            ref = ref[alt_len:]
+                    if ref[0] != alt[0][0]:
+                        if var_not_standard_count == 0:
+                            click.echo(f"⚠️Warning: The first base of the ref does not match the first base of the alt, chrom: {chrom}, pos: {pos}. Please check the VCF file.")
+                        else:
+                            click.echo(f"Error of not match, chrom: {chrom}, pos: {pos}")
+                        
+                        var_not_standard_count += 1
+
                     variant = Variant(
-                        chrom=record.chrom,
-                        start=record.pos,
-                        end=max(record.pos + len(record.ref) - 1, record.pos + len(list(record.alts)[0]) - 1),
-                        ref=record.ref,
-                        alt=list(record.alts),
-                        samples={s: record.samples[s]['GT'] for s in record.samples}
+                        chrom=chrom,
+                        start=pos,
+                        end=end,
+                        ref=ref,
+                        alt=alt,
+                        samples=samples
                     )
                     var_bp = abs(len(variant.ref)-len(variant.alt[0]))
                     var_bp_max = max(var_bp_max, var_bp)
@@ -106,7 +144,11 @@ def process_variants(config) -> List[VariantGroup]:
             raise InputError(f"Error reading VCF file: {str(e)}")
         finally:
             vcf.close()
-            
+    if var_not_align_count != 0:
+        click.echo(f"⚠️Warning: A total of {var_not_align_count} variants are not left-aligned. Please read the README")
+    if var_not_standard_count != 0:
+        click.echo(f"⚠️Warning: A total of {var_not_standard_count} variants are not standardized. Please read the README")
+
     logger.info("Sorting variants by chromosome (natural order) and start position...")
     # Sort by parsed chromosome value, then by start coordinate
     all_variants.sort(key=lambda v: (parse_chrom(v.chrom), v.start))
