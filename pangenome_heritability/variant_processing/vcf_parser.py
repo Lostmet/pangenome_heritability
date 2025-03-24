@@ -92,7 +92,7 @@ def process_variants(config) -> List[VariantGroup]:
                     variant = Variant(
                         chrom=record.chrom,
                         start=record.pos,
-                        end=record.pos + len(record.ref) - 1,
+                        end=max(record.pos + len(record.ref) - 1, record.pos + len(list(record.alts)[0]) - 1),
                         ref=record.ref,
                         alt=list(record.alts),
                         samples={s: record.samples[s]['GT'] for s in record.samples}
@@ -223,12 +223,13 @@ def filter_vcf(config, single_group):
                 chrom, pos = variant.chrom, variant.start
                 
                 # 在染色体范围内搜索匹配位置的记录
-                for rec in vcf_in.fetch(chrom, pos, pos + 1):
+                for rec in vcf_in.fetch(chrom, pos - 1, pos + 1):
                     if rec.pos == pos:
                         # 转换为标准VCF行并写入
                         vcf_line = str(rec).strip()  # 去除前后空白
                         f_out.write(vcf_line + '\n')  # 确保换行符一致性
                         break
+
     click.echo(f"Non-overlapping SVs(nSVs) saved as {nvcf_name}")
     return nvcf_name
 
