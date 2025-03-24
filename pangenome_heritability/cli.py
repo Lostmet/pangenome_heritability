@@ -172,7 +172,6 @@ def run_all(vcf: str, ref: str, cutoff: float, out: str, threads: int):
 
         click.echo("[Step 3] Generating rSVs...")
         alignments_dir = os.path.join(out, "alignment_results")
-        intermediate_csv = os.path.join(out, "Scanning_results.csv")
         final_csv = os.path.join(out, "merged_rSVs.csv")
         nrSV_csv = os.path.join(out, "nrSV_meta.csv")
 
