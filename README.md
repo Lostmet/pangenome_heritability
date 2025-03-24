@@ -14,8 +14,8 @@
 
 ```bash
 # 创建环境
-conda create -n panherit python=3.8
-conda activate panherit
+conda create -n test_panherit python=3.8
+conda activate test_panherit
 
 # 安装 panherit
 git clone https://github.com/Lostmet/pangenome_heritability.git
