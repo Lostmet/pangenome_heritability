@@ -14,10 +14,10 @@ def generate_fasta_sequences(config: Config, variant_groups: Dict[str, List[Vari
     # 定义用于处理单个组的辅助函数
     def process_group(chrom, i, group):
         start = group.start - 1
-        end = group.end
+        end = group.end + 1
         ref_seq = ref_genome.fetch(chrom, start, end).upper()  # 只提取 group 内的序列
 
-        # 计算Insertion信息
+        # 计算Insertion信息(max_insertion: {pos:length,...}, has_insertion: bool)
         max_insertions, has_insertion = get_max_insertions(group.variants, start)
         has_insertion_dict[f"Group_{chrom}_{i}_{group.start}"] = has_insertion  # 记录是否包含Insertion
 
@@ -84,13 +84,13 @@ def get_max_insertions(variants: List[Variant], start: int) -> Tuple[Dict[int, i
     for variant in variants:
         rel_start = variant.start - start  # 计算相对位置
         if len(variant.ref) == 1 and len(variant.alt[0]) > 1:  # 仅对插入变异计算
-            max_insertions[rel_start] = max(max_insertions.get(rel_start, 0), len(variant.alt[0]))
+            max_insertions[rel_start] = max(max_insertions.get(rel_start, 0), len(variant.alt[0])) 
             pos_set.append(variant.start)
     if len(pos_set) != len(set(pos_set)):
         has_insertion = True
         #print(pos_set)# 发现多insertion
               
-
+    #print(f'max_insertions:{max_insertions},has_insertion:{has_insertion}')
     return max_insertions, has_insertion
 
 def adjust_reference_for_insertions(ref_seq: str, max_insertions: Dict[int, int]) -> str:
@@ -115,14 +115,16 @@ def adjust_variants_for_insertions(ref_seq: str, max_insertions: Dict[int, int],
     ref_list = list(ref_seq)
     # 加一个处理好的ref
     ins = 0
-    rel_start = variant.start - start
+    rel_start = variant.start - start # index, 注意start前移了1，也就是pos-1
     rel_end = variant.end - start + 1
-
+    
     poly_ins = {} #记录多polyINS
     #处理deletion
     if len(variant.ref) > 1 and len(variant.alt[0]) == 1:
         #ref_list[rel_start - 1] = variant.alt[0] # 防止别人不标准化
-        ref_list[rel_start:rel_end - 1] = list((len(variant.ref)-1)*"-") #把对应的位置进行替换，我恨-1
+        #print(f"ref_list:{ref_list}, rel_start:{rel_start}, rel_end:{rel_end}, \
+              #len(ref):{len(variant.ref)}, variant.start={variant.start}, start={start}")
+        ref_list[rel_start:rel_end] = list((len(variant.ref)-1)*"-") #把对应的位置进行替换，我恨-1
         for pos, max_ins_length in sorted(max_insertions.items()):
             blank = "-" * (max_ins_length - 1)
             blank = list(blank)
@@ -172,20 +174,20 @@ def adjust_variants_for_insertions(ref_seq: str, max_insertions: Dict[int, int],
                 ins += max_ins_length - 1 ##看看能不能对齐
 
     # INV处理
-    elif "<INV>" in variant.alt:
-        ref_list[rel_start -1: rel_end] = reverse_complement(ref_list[rel_start -1: rel_end])
-        for pos, max_ins_length in sorted(max_insertions.items()):
-            blank = "-" * (max_ins_length - 1)
-            blank = list(blank)
-            position = 0
-            for items in blank:
-                ref_list.insert(pos + ins + position, items)  # 插入"-"
-                position += 1
+    #elif "<INV>" in variant.alt:
+        #ref_list[rel_start -1: rel_end] = reverse_complement(ref_list[rel_start -1: rel_end])
+        #for pos, max_ins_length in sorted(max_insertions.items()):
+            #blank = "-" * (max_ins_length - 1)
+            #blank = list(blank)
+            #position = 0
+            #for items in blank:
+                #ref_list.insert(pos + ins + position, items)  # 插入"-"
+                #position += 1
             #print(f"位置：{pos + ins}")
-            ins += max_ins_length - 1 ##看看能不能对齐，成了
+            #ins += max_ins_length - 1 
     # SNP和其他情况
     else:
-        ref_list[rel_start:rel_end - 1] = list(variant.alt)
+        ref_list[rel_start-1:rel_end] = list(variant.alt)
         for pos, max_ins_length in sorted(max_insertions.items()):
             blank = "-" * (max_ins_length - 1)
             blank = list(blank)
@@ -196,7 +198,6 @@ def adjust_variants_for_insertions(ref_seq: str, max_insertions: Dict[int, int],
             #print(f"位置：{pos + ins}")
             ins += max_ins_length - 1 ##看看能不能对齐，成了       
         
-
     return "".join(ref_list), poly_ins      
          
 #原始代码，不用了
