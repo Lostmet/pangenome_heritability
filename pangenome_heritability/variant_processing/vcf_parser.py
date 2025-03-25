@@ -71,16 +71,16 @@ def process_variants(config) -> List[VariantGroup]:
     single_group = [] 
     inv_group = [] # 加一个inv_group
     var_not_align_count = 0 # 加一个没有左对齐的数量的count
-    var_not_standard_count = 0 # 加一个没标准化的count
+    var_not_align_list = []
+    var_not_standard_count = 0
+    snp_group = []
     logger.info("Reading variants from VCF...")
     with tqdm(desc="Reading variants",unit='variants') as pbar:
         try:
             var_bp_all = 0
             var_bp_max = 0
             for record in vcf.fetch():
-                #print(f'alts:{list(record.alts)}')
                 if list(record.alts) == ['<INV>']:
-                    #print("有inv嘛")
                     inv = Variant(
                         chrom=record.chrom,
                         start=record.pos,
@@ -91,6 +91,7 @@ def process_variants(config) -> List[VariantGroup]:
                     )
                     inv_group.append(inv) # 扔到新的group里面
                 else:
+                    if_snp = False
                     # 修改pos，ref和alt，左对齐
                     chrom = record.chrom
                     start = record.pos
@@ -101,11 +102,25 @@ def process_variants(config) -> List[VariantGroup]:
                     end = pos + abs(len(ref)-len(alt[0])) -1
                     ref_len = len(ref)
                     alt_len = len(alt[0])
-                    if ref_len != 1 and alt_len != 1: # 没有左对齐显然
+                    if ref_len == 1 and alt_len == 1: # 那就是混杂了SNP，扔到nSV里面得了
+                        snp = Variant(
+                            chrom=record.chrom,
+                            start=record.pos,
+                            end=record.pos + len(record.ref) - 1,
+                            ref=record.ref,
+                            alt=list(record.alts),
+                            samples={s: record.samples[s]['GT'] for s in record.samples}
+                        )
+                        snp_group.append(snp) # 扔到新的group里面   
+                        if_snp = True                     
+
+                    elif ref_len != 1 and alt_len != 1: # 没有左对齐显然
                         if var_not_align_count == 0:
-                            click.echo(f"⚠️Warning: Unaligned variant detected, chrom: {chrom}, pos: {pos}. Please check; the software will attempt to automatically left-align.")
+                            var_not_align_list.append(f'chrom:{chrom}, pos:{pos}')
+                            tqdm.write(f"Warning: Unaligned variant detected, chrom: {chrom}, pos: {pos}. Please check; the software will attempt to automatically left-align.")
                         else:
-                            click.echo(f"Error of unaligned, chrom: {chrom}, pos: {pos}")
+                            var_not_align_list.append(f'chrom:{chrom}, pos:{pos}')
+                            #click.echo(f"Error of unaligned, chrom: {chrom}, pos: {pos}")
                         var_not_align_count += 1
                         if ref_len == alt_len:
                             pos += ref_len - 1
@@ -121,33 +136,32 @@ def process_variants(config) -> List[VariantGroup]:
                             ref = ref[alt_len:]
                     if ref[0] != alt[0][0]:
                         if var_not_standard_count == 0:
-                            click.echo(f"⚠️Warning: The first base of the ref does not match the first base of the alt, chrom: {chrom}, pos: {pos}. Please check the VCF file.")
+                            var_not_align_list.append(f'chrom:{chrom}, pos:{pos}')
+                            tqdm.write(f"Detected variant where either REF or ALT is 1 bp long, but the first base differs, indicating possible complex substitution events, chrom: {chrom}, pos: {pos}. Please check the VCF file.")
                         else:
-                            click.echo(f"Error of not match, chrom: {chrom}, pos: {pos}")
+                            var_not_align_list.append(f'chrom:{chrom}, pos:{pos}')
+
                         
                         var_not_standard_count += 1
-
-                    variant = Variant(
-                        chrom=chrom,
-                        start=pos,
-                        end=end,
-                        ref=ref,
-                        alt=alt,
-                        samples=samples
-                    )
-                    var_bp = abs(len(variant.ref)-len(variant.alt[0]))
-                    var_bp_max = max(var_bp_max, var_bp)
-                    var_bp_all += var_bp # 暂时不管inv
-                    all_variants.append(variant)
+                    
+                    if not if_snp:
+                        variant = Variant(
+                            chrom=chrom,
+                            start=pos,
+                            end=end,
+                            ref=ref,
+                            alt=alt,
+                            samples=samples
+                        )
+                        var_bp = abs(len(variant.ref)-len(variant.alt[0]))
+                        var_bp_max = max(var_bp_max, var_bp)
+                        var_bp_all += var_bp # 暂时不管inv
+                        all_variants.append(variant)
                 pbar.update(1)
         except Exception as e:
             raise InputError(f"Error reading VCF file: {str(e)}")
         finally:
             vcf.close()
-    if var_not_align_count != 0:
-        click.echo(f"⚠️Warning: A total of {var_not_align_count} variants are not left-aligned. Please read the README")
-    if var_not_standard_count != 0:
-        click.echo(f"⚠️Warning: A total of {var_not_standard_count} variants are not standardized. Please read the README")
 
     logger.info("Sorting variants by chromosome (natural order) and start position...")
     # Sort by parsed chromosome value, then by start coordinate
@@ -156,10 +170,30 @@ def process_variants(config) -> List[VariantGroup]:
     logger.info("Grouping sorted variants...")
     variant_groups = []
     inv_groups = []
+    snp_groups = []
     current_group = None
     inv_current_group = None
+    snp_current_group = None
     inv_count = len(inv_group)
-    variant_count = len(all_variants) + inv_count
+    snp_count = len(snp_group)
+    variant_count = len(all_variants) + inv_count + snp_count
+
+    if var_not_align_count +  var_not_standard_count != 0:
+        log_path = os.path.join(config.output_dir, "VCF_normalization_failed.log", )
+        click.echo(
+    f"⚠ Warning: A total of {var_not_align_count + var_not_standard_count} variants may not be properly left-aligned.\n"
+    "Please refer to the README for normalization instructions and double-check your VCF input.\n"
+    f"(Detailed log saved at: {log_path})"
+)
+        with open(log_path, "w") as f:
+            f.write(f"{var_not_align_count} variants have redundant REF and ALT sequence overlap (i.e., both REF and ALT are longer than 1 bp)\n")
+            f.write(f"{var_not_standard_count} variants have non-matching bases at the first position of REF and ALT\n")
+            f.write("These issues may indicate that your VCF is not left-aligned or not normalized properly.\n")
+            f.write(f"Abnormal variants account for {100*(var_not_align_count + var_not_standard_count)/variant_count:.2f}% of all detected variants.\n")
+            f.write("Please check the following variant records:\n")
+            for item in var_not_align_list:
+                f.write(item + "\n")
+
     # 处理inv_group
     for inv in inv_group:
         if inv_current_group is None:
@@ -181,6 +215,26 @@ def process_variants(config) -> List[VariantGroup]:
     if inv_current_group is not None:
         inv_groups.append(inv_current_group)
 
+    # 处理snp_group
+    for snp in snp_group:
+        if snp_current_group is None:
+            # First variant
+            snp_current_group = VariantGroup(snp.chrom)
+            snp_current_group.add_variant(snp)
+        else:
+            # If chromosome is different or they do not overlap, start a new group
+            if (snp_current_group.chrom != snp.chrom or 
+                not snp_current_group.overlaps(snp)):
+                snp_groups.append(snp_current_group)
+                snp_current_group = VariantGroup(snp.chrom)
+                snp_current_group.add_variant(snp)
+            else:
+                # Still in the same group
+                snp_current_group.add_variant(snp)
+    click.echo(f"Excluding {snp_count} SNPs") # 记录排除掉的snp的个数
+    # Add the last group if it exists
+    if snp_current_group is not None:
+        snp_groups.append(snp_current_group)
 
     with tqdm(desc="Grouping variants", total=variant_count) as pbar:
         for variant in all_variants:
@@ -207,17 +261,17 @@ def process_variants(config) -> List[VariantGroup]:
     
     logger.info(f"Processed {len(variant_groups)} variant groups")
 
-    
     multi_group = []
     multi_var_bp = 0
     multi_var_bp_max = 0
     single_sv_count = 0
     multi_var_bp_all = 0
     variant_max = 0
-    # 直接把inv_groups扔到single里面吃灰
+    # 直接把inv_groups扔到single里面
     for i in range(len(inv_groups)):
         single_group.append(inv_groups[i])
-        single_sv_count += 1
+    single_sv_count += len(inv_groups)
+    
     ### multi_group1:{'chrom': '2', 'variants': [Variant(chrom='2', start=906670, end=906670, ref='A', alt=['ATATATATATATA'], samples={'SL001_SL001':
     for i in range(len(variant_groups)):
         if len(variant_groups[i].variants) == 1:
@@ -227,7 +281,6 @@ def process_variants(config) -> List[VariantGroup]:
             multi_group.append(variant_groups[i])
             for n in range(len(variant_groups[i].variants)):
                 variant = variant_groups[i].variants[n]
-                # print(f"这里：{variant.alt[0]}")
                 ref_bp = len(variant.ref)
                 alt_bp = len(variant.alt[0])
                 multi_var_bp = abs(ref_bp - alt_bp)
@@ -237,42 +290,68 @@ def process_variants(config) -> List[VariantGroup]:
                     variant_max = variant
                 
     percentage_sv_overlapped = (1- single_sv_count/variant_count)*100 # 给到一个重叠的SV的百分比
-
+    single_group.sort(key=lambda v: (parse_chrom(v.chrom), v.start))
     # print(f'single_group1:{single_group[0].__dict__}')
     # multi group，var未group的bp，single group，single_sv_count，multi后的var_bp，和max
-    return multi_group, var_bp_all, var_bp_max, single_sv_count, multi_var_bp_all, multi_var_bp_max, percentage_sv_overlapped, variant_max, single_group, inv_count, variant_count
+    return multi_group, var_bp_all, var_bp_max, single_sv_count, multi_var_bp_all, multi_var_bp_max, percentage_sv_overlapped, variant_max, single_group, inv_count, variant_count, snp_groups
 
 import pysam
 import os
 from tqdm import tqdm
 import click
-def filter_vcf(config, single_group):
+def filter_vcf(config, single_group, snp_groups):
     nvcf_name = "nSV.vcf"
-    output_vcf = os.path.join(config.output_dir, nvcf_name)
-    
-    # 读取输入文件的header信息
-    with pysam.VariantFile(config.vcf_file, "r") as vcf_in:
-        header_text = str(vcf_in.header)
-    
-    # 手动写入header到输出文件
-    with open(output_vcf, "w") as f_out:
-        f_out.write(header_text)
-        
-        # 重新打开输入文件遍历记录
+    if single_group:
+        output_vcf = os.path.join(config.output_dir, nvcf_name)
+        # 读取输入文件的header信息
         with pysam.VariantFile(config.vcf_file, "r") as vcf_in:
-            for i in tqdm(range(len(single_group)), desc="Generating nSV: ", unit='variants'):
-                variant = single_group[i].variants[0]
-                chrom, pos = variant.chrom, variant.start
-                
-                # 在染色体范围内搜索匹配位置的记录
-                for rec in vcf_in.fetch(chrom, pos - 1, pos + 1):
-                    if rec.pos == pos:
-                        # 转换为标准VCF行并写入
-                        vcf_line = str(rec).strip()  # 去除前后空白
-                        f_out.write(vcf_line + '\n')  # 确保换行符一致性
-                        break
+            header_text = str(vcf_in.header)
+        
+        # 手动写入header到输出文件
+        with open(output_vcf, "w") as f_out:
+            f_out.write(header_text)
+            
+            # 重新打开输入文件遍历记录
+            with pysam.VariantFile(config.vcf_file, "r") as vcf_in:
+                for i in tqdm(range(len(single_group)), desc="Generating nSV: ", unit='variants'):
+                    variant = single_group[i].variants[0]
+                    chrom, pos = variant.chrom, variant.start
+                    
+                    # 在染色体范围内搜索匹配位置的记录
+                    for rec in vcf_in.fetch(chrom, pos - 1, pos + 1):
+                        if rec.pos == pos:
+                            # 转换为标准VCF行并写入
+                            vcf_line = str(rec).strip()  # 去除前后空白
+                            f_out.write(vcf_line + '\n')  # 确保换行符一致性
+                            break
 
-    click.echo(f"Non-overlapping SVs(nSVs) saved as {nvcf_name}")
+        click.echo(f"Non-overlapping SVs(nSVs) saved at {output_vcf}")
+    if snp_groups:
+        snpvcf_name = "SNP.vcf"
+        output_vcf = os.path.join(config.output_dir, snpvcf_name)
+        # 读取输入文件的header信息
+        with pysam.VariantFile(config.vcf_file, "r") as vcf_in:
+            header_text = str(vcf_in.header)
+        
+        # 手动写入header到输出文件
+        with open(output_vcf, "w") as f_out:
+            f_out.write(header_text)
+            
+            # 重新打开输入文件遍历记录
+            with pysam.VariantFile(config.vcf_file, "r") as vcf_in:
+                for i in tqdm(range(len(snp_groups)), desc="Generating SNP: ", unit='variants'):
+                    variant = snp_groups[i].variants[0]
+                    chrom, pos = variant.chrom, variant.start
+                    
+                    # 在染色体范围内搜索匹配位置的记录
+                    for rec in vcf_in.fetch(chrom, pos - 1, pos + 1):
+                        if rec.pos == pos:
+                            # 转换为标准VCF行并写入
+                            vcf_line = str(rec).strip()  # 去除前后空白
+                            f_out.write(vcf_line + '\n')  # 确保换行符一致性
+                            break        
+        click.echo(f"SNP VCF file saved at {output_vcf}")
+
     return nvcf_name
 
 
