@@ -82,7 +82,7 @@ def process_vcf(vcf: str, ref: str, cutoff, out: str, threads: int):
         config = Config(vcf_file=vcf, ref_fasta=ref, output_dir=out, threads=threads)
         _, var_bp_all, var_bp_max, single_sv_count, \
         multi_bp, multi_bp_max, percentage_sv_overlapped, \
-        variant_max, single_group, _, _ = process_variants(config)
+        variant_max, single_group, _, _, snp_groups= process_variants(config)
 
         click.echo(f"Total base pairs to be processed: {var_bp_all:,}, max per variant: {var_bp_max:,}")
         click.echo(f"After grouping: {multi_bp:,} base pairs, max per variant: {multi_bp_max:,}")
@@ -91,7 +91,7 @@ def process_vcf(vcf: str, ref: str, cutoff, out: str, threads: int):
         click.echo(f"Percentage of overlapping SVs: {percentage_sv_overlapped:.2f}%")
         
         click.echo("Processing non-overlapping SVs (nSVs) and generating nSV.vcf...")
-        _ = filter_vcf(config, single_group)
+        _ = filter_vcf(config, single_group, snp_groups)
         
         end_time = time.time()
         total_time = end_time - start_time
@@ -111,6 +111,7 @@ def process_vcf(vcf: str, ref: str, cutoff, out: str, threads: int):
             f"Grouped base pairs: {multi_bp:,}, max per variant: {multi_bp_max:,}",
             f"Max variant: chromosome {variant_max.chrom}, position {variant_max.start:,}",
             f"Excluded SVs (no overlap): {single_sv_count:,}",
+            f"Excluded SNPs: {len(snp_groups)}",
             f"Overlapping SVs percentage: {percentage_sv_overlapped:.2f}%"
         ]
         
@@ -138,7 +139,7 @@ def run_all(vcf: str, ref: str, cutoff: float, out: str, threads: int):
         config = Config(vcf_file=vcf, ref_fasta=ref, output_dir=out, threads=threads)
         grouped_variants_list, var_bp_all, var_bp_max, single_sv_count, \
         multi_bp, multi_bp_max, percentage_sv_overlapped, \
-        variant_max, single_group, inv_count, variant_count = process_variants(config)
+        variant_max, single_group, inv_count, variant_count, snp_groups = process_variants(config)
 
         click.echo(f"Total base pairs to be processed: {var_bp_all:,}, max per variant: {var_bp_max:,}")
         click.echo(f"After grouping: {multi_bp:,} base pairs, max per variant: {multi_bp_max:,}")
@@ -154,7 +155,7 @@ def run_all(vcf: str, ref: str, cutoff: float, out: str, threads: int):
         click.echo(click.style("Note: Actual runtime depends on CPU performance.", fg="yellow"))
 
         click.echo("Processing non-overlapping SVs (nSVs) and generating nSV.vcf...")
-        nSV_name = filter_vcf(config, single_group)
+        nSV_name = filter_vcf(config, single_group, snp_groups)
         
         grouped_variants_dict = {}
         for group in grouped_variants_list:
@@ -229,8 +230,9 @@ def run_all(vcf: str, ref: str, cutoff: float, out: str, threads: int):
             f"Total variants: {variant_count:,}",
             f"INV count: {inv_count:,}",
             f"nSV count: {single_sv_count:,}",
+            f"Excluded SNP count: {len(snp_groups)}",
             f"Overlapping SVs: {(variant_count - single_sv_count):,}",
-            f"Overlap percentage: {percentage_sv_overlapped:.2f}%",
+            f"Overlapping SVs percentage: {percentage_sv_overlapped:.2f}%",
             f"Total variant groups: {total_groups:,}",
             f"Final rSV count: {rSV_count:,}"
         ]
