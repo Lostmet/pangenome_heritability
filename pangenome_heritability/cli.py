@@ -44,7 +44,7 @@ def align_time(vcf: str, ref: str, cutoff, out: str, threads: int):
     config = Config(vcf_file=vcf, ref_fasta=ref, output_dir=out, threads=threads)
     grouped_variants_list, _, _, _, \
     _, _, _, \
-    _, _, _, _ = process_variants(config)
+    _, _, _ = process_variants(config)
 
     grouped_variants_dict = {}
     for group in grouped_variants_list:
