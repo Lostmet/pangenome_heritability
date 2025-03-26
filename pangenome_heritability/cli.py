@@ -9,7 +9,6 @@ from .variant_processing.vcf_parser import process_variants, filter_vcf
 from .variant_processing.fasta_generator import generate_fasta_sequences
 from .alignment.mafft_wrapper import run_alignments 
 from .rSV.window_generator import process_fasta_files, process_and_merge_results, parse_fasta_with_metadata, nrSV_vcf_generate
-from .rSV.comparison import process_comparison_results
 from .genotype.genotype_mapper import process_diff_array, process_vcf_to_x_matrix, compute_t_matrix, save_rSV_meta, extract_vcf_sample, vcf_generate, detect_abnormal, sample_name_contract
 from .utils.logging_utils import get_logger
 
@@ -44,7 +43,7 @@ def align_time(vcf: str, ref: str, cutoff, out: str, threads: int):
     config = Config(vcf_file=vcf, ref_fasta=ref, output_dir=out, threads=threads)
     grouped_variants_list, _, _, _, \
     _, _, _, \
-    _, _, _ = process_variants(config)
+    _, _, _, _, _ = process_variants(config)
 
     grouped_variants_dict = {}
     for group in grouped_variants_list:
