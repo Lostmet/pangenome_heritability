@@ -1,16 +1,23 @@
+import os
+import time
 import click
 import shutil
-import time
-import os
 import logging
+import datetime
 from pathlib import Path
 from .config import Config
+from .utils.logging_utils import *
+from .utils.file_utils import check_vcf_vs_fasta
+from .alignment.alignment import run_alignments
+from .genotype.vcf_converter import nrSV_vcf_generate
 from .variant_processing.vcf_parser import process_variants, filter_vcf
 from .variant_processing.fasta_generator import generate_fasta_sequences
-from .alignment.mafft_wrapper import run_alignments 
-from .rSV.window_generator import process_fasta_files, process_and_merge_results, parse_fasta_with_metadata, nrSV_vcf_generate
-from .genotype.genotype_mapper import process_diff_array, process_vcf_to_x_matrix, compute_t_matrix, save_rSV_meta, extract_vcf_sample, vcf_generate, detect_abnormal, sample_name_contract
-from .utils.logging_utils import get_logger
+from .rSV.window_generator import process_fasta_files, process_and_merge_results, parse_fasta_with_metadata
+from .genotype.genotype_mapper import process_diff_array, process_vcf_to_x_matrix, compute_t_matrix, save_rSV_meta, extract_vcf_sample, vcf_generate, sample_name_contract
+
+
+logger = get_logger(__name__)
+
 
 def check_tools(*tools):
     """
@@ -24,10 +31,9 @@ def check_tools(*tools):
             f"Please ensure they are installed and accessible from your PATH."
         )
 
-logger = get_logger(__name__)
 @click.group()
 def cli():
-    """A Python tool for refined Structured Variants analysis."""
+    """A Python tool for generating refined Structured Variants."""
     pass
 
 @cli.command("align-time")
@@ -36,34 +42,33 @@ def cli():
 @click.option('--cutoff', default=0.9, type=float, help="Threshold for assigning poly-alts to separate rSVs.")
 @click.option('--out', required=True, help='Output directory for processed variants and FASTA files')
 @click.option('--threads', default=1, type=int, help='Number of threads')
-def align_time(vcf: str, ref: str, cutoff, out: str, threads: int):
+def align_time(vcf: str, ref: str, cutoff: float, out: str, threads: int):
     """Test the time of alignment"""
+    setup_logging(Path(out) / "align-time.log")
     start_time = time.time()
-    click.echo("[Step 1] Processing VCF and generating FASTA...")
+    log_step("Step 1 Processing VCF and generating FASTA")
     config = Config(vcf_file=vcf, ref_fasta=ref, output_dir=out, threads=threads)
     grouped_variants_list, _, _, _, \
-    _, _, _, \
-    _, _, _, _, _ = process_variants(config)
+    _, _, _, _ = process_variants(config)
 
     grouped_variants_dict = {}
     for group in grouped_variants_list:
         grouped_variants_dict.setdefault(group.chrom, []).append(group)
     total_groups = sum(len(groups) for groups in grouped_variants_dict.values())
-    click.echo(f"Overlapping variants grouped: {total_groups:,} groups")
+    logger.info(f"Overlapping variants grouped: {total_groups:,} groups")
 
     fasta_path, has_insertion_dict, poly_ins_list = generate_fasta_sequences(config, grouped_variants_dict, total_groups)
-    click.echo(f"FASTA file created: {fasta_path}")
+    logger.info(f"FASTA file created: {fasta_path}")
 
-    click.echo("[Step 2] Running alignments...")
+    log_step("Step 2 Running alignments")
     alignments_config = Config(grouped_variants_file=fasta_path, ref_fasta=ref, output_dir=out, threads=threads)
     run_alignments(alignments_config, fasta_path, has_insertion_dict, poly_ins_list)
-    click.echo("Alignments completed. Results saved in 'alignment_results' directory.")    
+    logger.info("Alignments completed. Results saved in 'alignment_results' directory.")    
     end_time = time.time()
     total_time = end_time - start_time
     hours, remainder = divmod(total_time, 3600)
     minutes, seconds = divmod(remainder, 60)
-    click.echo(f"Total runtime: {int(hours)}:{int(minutes):02d}:{int(seconds):02d}")
-
+    log_step(f"Total runtime: {int(hours)}:{int(minutes):02d}:{int(seconds):02d}")
 
 @cli.command("process-vcf")
 @click.option('--vcf', required=True, help='Input VCF file')
@@ -75,52 +80,51 @@ def align_time(vcf: str, ref: str, cutoff, out: str, threads: int):
 def process_vcf(vcf: str, ref: str, cutoff, out: str, threads: int):
     """Process overlapping variants, group them, and generate nSVs. 
     This step produces 'variants_pre_aligned.fasta' and 'nSV.vcf'."""
+    setup_logging(Path(out) / "process_vcf.log")
     try:
+        logger.info(f"{'Command:':<5}{get_clean_command()}")
         start_time = time.time()
-        click.echo("[Step 1] Processing VCF and generating FASTA...")
-        config = Config(vcf_file=vcf, ref_fasta=ref, output_dir=out, threads=threads)
-        _, var_bp_all, var_bp_max, single_sv_count, \
-        multi_bp, multi_bp_max, percentage_sv_overlapped, \
-        variant_max, single_group, _, _, snp_groups= process_variants(config)
+        logger.info(f"Start time: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        log_thread_info(threads)
 
-        click.echo(f"Total base pairs to be processed: {var_bp_all:,}, max per variant: {var_bp_max:,}")
-        click.echo(f"After grouping: {multi_bp:,} base pairs, max per variant: {multi_bp_max:,}")
-        click.echo(f"Max variant located at chromosome {variant_max.chrom}, position {variant_max.start:,}")
-        click.echo(f"{single_sv_count:,} SVs excluded due to lack of overlap")
-        click.echo(f"Percentage of overlapping SVs: {percentage_sv_overlapped:.2f}%")
-        
+        log_step("Processing VCF and generating FASTA")
+        config = Config(vcf_file=vcf, ref_fasta=ref, output_dir=out, threads=threads)
+        grouped_variants_list, single_sv_count, \
+        multi_bp, percentage_sv_overlapped, \
+        single_group, inv_count, variant_count, snp_groups = process_variants(config)
+
+        est_time = multi_bp / 3000
+        hours, remainder = divmod(est_time, 3600)  
+        minutes, _ = divmod(remainder, 60)  
+        click.echo(f"Estimated runtime: {int(hours)}:{int(minutes):02d}:00")
+        click.echo(click.style("Note: Actual runtime depends on CPU performance.", fg="yellow"))
+
         click.echo("Processing non-overlapping SVs (nSVs) and generating nSV.vcf...")
         _ = filter_vcf(config, single_group, snp_groups)
-        
+        stats = {
+                    "Total variants": f"{variant_count:,}",
+                    "INV count": f"{inv_count:,}",
+                    "nSV count": f"{single_sv_count:,}",
+                    "Excluded SNP count": f"{len(snp_groups)}",
+                    "Overlapping SVs": f"{variant_count - single_sv_count:,}",
+                    "Overlapping SVs percentage": f"{percentage_sv_overlapped:.2f}%",
+                    "Total variant groups": f"{len(grouped_variants_list):,}",
+                }
+  
         end_time = time.time()
-        total_time = end_time - start_time
-        hours, remainder = divmod(total_time, 3600)
-        minutes, seconds = divmod(remainder, 60)
-        
-        logging.basicConfig(
-            filename=os.path.join(out, f"{out}_process-vcf.log"),
-            level=logging.INFO,
-            format="%(asctime)s - %(levelname)s - %(message)s",
-            datefmt="%Y-%m-%d %H:%M:%S",
-        )
-        log_messages = [
-            f"Total runtime: {int(hours)}:{int(minutes):02d}:{int(seconds):02d}",
-            f"Total base pairs processed: {var_bp_all:,}",
-            f"Max base pairs per variant: {var_bp_max:,}",
-            f"Grouped base pairs: {multi_bp:,}, max per variant: {multi_bp_max:,}",
-            f"Max variant: chromosome {variant_max.chrom}, position {variant_max.start:,}",
-            f"Excluded SVs (no overlap): {single_sv_count:,}",
-            f"Excluded SNPs: {len(snp_groups)}",
-            f"Overlapping SVs percentage: {percentage_sv_overlapped:.2f}%"
-        ]
-        
-        for msg in log_messages:
-            logging.info(msg)
+        runtime = end_time - start_time
+        log_step("Summary")
+        log_summary_block(
+            cmd=get_clean_command(),
+            start=start_time,
+            duration=runtime,
+            stats=stats)
+        log_all_warnings_and_errors()
+
     except Exception as e:
-        click.echo(f"Error in process-vcf: {str(e)}", err=True)
+        logger.info(f"Error in process-vcf: {str(e)}", err=True)
         logging.error(f"Error in process-vcf: {str(e)}")
         raise click.Abort()
-
 
 
 @cli.command("run-all")
@@ -132,21 +136,22 @@ def process_vcf(vcf: str, ref: str, cutoff, out: str, threads: int):
 
 def run_all(vcf: str, ref: str, cutoff: float, out: str, threads: int):
     """Execute the complete variant processing pipeline."""
-    try:
-        start_time = time.time()
-        click.echo("[Step 1] Processing VCF and generating FASTA...")
-        config = Config(vcf_file=vcf, ref_fasta=ref, output_dir=out, threads=threads)
-        grouped_variants_list, var_bp_all, var_bp_max, single_sv_count, \
-        multi_bp, multi_bp_max, percentage_sv_overlapped, \
-        variant_max, single_group, inv_count, variant_count, snp_groups = process_variants(config)
+    setup_logging(Path(out) / "run-all.log")
+    check_tools("mafft")
+    check_vcf_vs_fasta(vcf, ref)
 
-        click.echo(f"Total base pairs to be processed: {var_bp_all:,}, max per variant: {var_bp_max:,}")
-        click.echo(f"After grouping: {multi_bp:,} base pairs, max per variant: {multi_bp_max:,}")
-        click.echo(f"Max variant located at: chromosome {variant_max.chrom}, position {variant_max.start:,}")
-        click.echo("If the runtime is too long, you can remove this variant to speed up the process.")
-        click.echo(f"{single_sv_count:,} SVs excluded due to lack of overlap")
-        click.echo(f"Percentage of overlapping SVs: {percentage_sv_overlapped:.2f}%")
-        
+    try:
+        logger.info(f"{'Command:':<5}{get_clean_command()}")
+        start_time = time.time()
+        logger.info(f"Start time: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        log_thread_info(threads)
+
+        log_step("Step 1 Processing VCF and generating FASTA")
+        config = Config(vcf_file=vcf, ref_fasta=ref, output_dir=out, threads=threads)
+        grouped_variants_list, single_sv_count, \
+        multi_bp, percentage_sv_overlapped, \
+        single_group, inv_count, variant_count, snp_groups = process_variants(config)
+
         est_time = multi_bp / 3000
         hours, remainder = divmod(est_time, 3600)  
         minutes, _ = divmod(remainder, 60)  
@@ -160,46 +165,49 @@ def run_all(vcf: str, ref: str, cutoff: float, out: str, threads: int):
         for group in grouped_variants_list:
             grouped_variants_dict.setdefault(group.chrom, []).append(group)
         total_groups = sum(len(groups) for groups in grouped_variants_dict.values())
-        click.echo(f"Overlapping variants grouped: {total_groups:,} groups")
+        logger.info(f"Overlapping variants grouped: {total_groups:,} groups")
 
         fasta_path, has_insertion_dict, poly_ins_list = generate_fasta_sequences(config, grouped_variants_dict, total_groups)
-        click.echo(f"FASTA file created: {fasta_path}")
+        logger.info(f"FASTA file created: {fasta_path}")
 
-        click.echo("[Step 2] Running alignments...")
+        log_step("Step 2 Running alignments")
         alignments_config = Config(grouped_variants_file=fasta_path, ref_fasta=ref, output_dir=out, threads=threads)
         run_alignments(alignments_config, fasta_path, has_insertion_dict, poly_ins_list)
-        click.echo("Alignments completed. Results saved in 'alignment_results' directory.")
+        logger.info("Alignments completed. Results saved in 'alignment_results' directory.")
 
-        click.echo("[Step 3] Generating rSVs...")
+        log_step("Step 3 Generating rSVs")
         alignments_dir = os.path.join(out, "alignment_results")
         final_csv = os.path.join(out, "merged_rSVs.csv")
         nrSV_csv = os.path.join(out, "nrSV_meta.csv")
 
         genome_metadata = parse_fasta_with_metadata(fasta_path)
         click.echo("Scanning aligned FASTA files...")
-        results = process_fasta_files(alignments_dir, has_insertion_dict, genome_metadata, max_workers=threads)
+        scan_results = process_fasta_files(alignments_dir, has_insertion_dict, genome_metadata, max_workers=threads)
         click.echo("All FASTA files successfully scanned.")
 
-        nrSV_list = process_and_merge_results(results, final_csv, threads, has_insertion_dict, cutoff, nrSV_csv)
-        click.echo(f"rSV processing completed. Results saved in {final_csv}")
+        nrSV_list = process_and_merge_results(scan_results, final_csv, threads, has_insertion_dict, cutoff, nrSV_csv)
+        logger.info(f"rSV processing completed. Results saved in {final_csv}")
         
-        click.echo("[Step 4] Converting to VCF format and generating matrices...")
+        log_step("Step 4 Converting to VCF format and generating matrices")
         if nrSV_list:
             nrSV_count = nrSV_vcf_generate(nrSV_csv, config, nrSV_list, nSV_name)
         
         click.echo("Generating rSV_meta.csv with meta information (positions, reference, alternate alleles)...")
         save_rSV_meta(final_csv, out, threads)
-
         matrix_dir = Path(out) / "matrix_results"
         matrix_dir.mkdir(parents=True, exist_ok=True)
+
         click.echo("Generating matrices...")
         click.echo("Creating D matrices...")
         process_diff_array(final_csv, matrix_dir)
+
         click.echo("Creating X matrices...")
         sample_names = process_vcf_to_x_matrix(vcf, matrix_dir)
+
         click.echo("Creating T matrices...")
         compute_t_matrix(matrix_dir)
-        click.echo("Matrices successfully generated in 'matrix_results'.")
+
+        logger.info("Matrices successfully generated in 'matrix_results'.")
 
         rSV_meta_csv = os.path.join(out, "rSV_meta.csv")
         gt_matrix = os.path.join(out, "GT_matrix.csv")
@@ -207,44 +215,37 @@ def run_all(vcf: str, ref: str, cutoff: float, out: str, threads: int):
 
         click.echo("Generating GT matrix and rSV.vcf...")
         rSV_count, total_groups, gt_buffer = extract_vcf_sample(rSV_meta_csv, gt_matrix, matrix_dir, threads)
-        click.echo(f"rSV count: {rSV_count:,}")
+        logging.info(f"rSV count: {rSV_count:,}")
         vcf_generate(sample_names, rSV_meta_csv, gt_buffer, rSV_vcf)
 
-        click.echo(f"{rSV_vcf} successfully generated!")
+        logging.info(f"{rSV_vcf} successfully generated!")
         click.echo("Pipeline execution completed!")
 
+        stats = {
+            "Total variants": f"{variant_count:,}",
+            "INV count": f"{inv_count:,}",
+            "nSV count": f"{single_sv_count:,}",
+            "Excluded SNP count": f"{len(snp_groups)}",
+            "Overlapping SVs": f"{variant_count - single_sv_count:,}",
+            "Overlapping SVs percentage": f"{percentage_sv_overlapped:.2f}%",
+            "Total variant groups": f"{total_groups:,}",
+            "Final rSV count": f"{rSV_count:,}"
+        }
+  
         end_time = time.time()
-        total_time = end_time - start_time
-        hours, minutes, seconds = total_time // 3600, (total_time % 3600) // 60, total_time % 60
-
-        logging.basicConfig(
-            filename=os.path.join(out, f"{out}_run-all.log"),
-            level=logging.INFO,
-            format="%(asctime)s - %(levelname)s - %(message)s",
-            datefmt="%Y-%m-%d %H:%M:%S",
-        )
-
-        log_messages = [
-            f"Total runtime: {int(hours)}:{int(minutes):02d}:{int(seconds):02d}",
-            f"Total variants: {variant_count:,}",
-            f"INV count: {inv_count:,}",
-            f"nSV count: {single_sv_count:,}",
-            f"Excluded SNP count: {len(snp_groups)}",
-            f"Overlapping SVs: {(variant_count - single_sv_count):,}",
-            f"Overlapping SVs percentage: {percentage_sv_overlapped:.2f}%",
-            f"Total variant groups: {total_groups:,}",
-            f"Final rSV count: {rSV_count:,}"
-        ]
-
-        for msg in log_messages:
-            click.echo(msg)
-            logging.info(msg)
-    
+        runtime = end_time - start_time
+        log_step("Summary")
+        log_summary_block(
+            cmd=get_clean_command(),
+            start=start_time,
+            duration=runtime,
+            stats=stats)
+        log_all_warnings_and_errors()
     except RuntimeError as e:
-        click.echo(f"Error: {str(e)}", err=True)
+        logger.warning(f"Error: {str(e)}", err=True)
         raise click.Abort()
     except Exception as e:
-        click.echo(f"Critical error in run-all: {str(e)}", err=True)
+        logger.warning(f"Critical error in run-all: {str(e)}", err=True)
         raise click.Abort()
 
 @cli.command("make-meta")
@@ -254,18 +255,19 @@ def run_all(vcf: str, ref: str, cutoff: float, out: str, threads: int):
 @click.option('--cutoff', default=0.9, type=float, help="Threshold for assigning poly-alts to separate rSVs.")
 @click.option('--threads', default=10, type=int, help='Number of threads')
 
-def make_meta(vcf: str, ref, _, out: str, threads: int):
+def make_meta(vcf: str, ref, cutoff, out: str, threads: int):
     '''If you already have merged_rSVs.csv and the 'run-all' step was interrupted at this stage, you can resume from here. 
     Ensure the output path remains unchanged.'''
+    setup_logging(Path(out) / "make-meta.log")
     start_time = time.time()
-    click.echo("[Step 1] Extracting SV information...")
+    log_step("Step 1 Extracting SV information")
     config = Config(vcf_file=vcf, ref_fasta=ref, output_dir=out, threads=threads)
-    _, _, _, single_sv_count, \
-    _, _, percentage_sv_overlapped, \
-    _, _, inv_count, variant_count = process_variants(config)
+    _, single_sv_count, \
+    _, percentage_sv_overlapped, \
+    _, inv_count, variant_count, snp_groups = process_variants(config)
 
     final_csv = os.path.join(out, "merged_rSVs.csv")
-    click.echo("[Step 2] Converting to VCF format and generating matrices...")
+    log_step("Step 2 Converting to VCF format and generating matrices")
     
     # Create a directory for storing matrices
     matrix_dir = Path(out) / "matrix_results"
@@ -285,7 +287,7 @@ def make_meta(vcf: str, ref, _, out: str, threads: int):
     
     click.echo("c. Generating T matrices...")
     compute_t_matrix(matrix_dir)
-    click.echo("D, X, and T matrices successfully generated in 'matrix_results' directory.")
+    logger.info("D, X, and T matrices successfully generated in 'matrix_results' directory.")
     
     rSV_meta_csv = os.path.join(out, "rSV_meta.csv")
     gt_matrix = os.path.join(out, "GT_matrix.csv")
@@ -293,36 +295,31 @@ def make_meta(vcf: str, ref, _, out: str, threads: int):
     
     click.echo("3. Generating GT matrix and rSV.vcf...")
     rSV_count, total_groups, gt_buffer = extract_vcf_sample(rSV_meta_csv, gt_matrix, matrix_dir, threads)
-    click.echo(f"rSV count: {rSV_count:,}")
+    logger.info(f"rSV count: {rSV_count:,}")
     vcf_generate(sample_names, rSV_meta_csv, gt_buffer, rSV_vcf)
 
-    click.echo(f"{rSV_vcf} successfully generated!")
+    logger.info(f"{rSV_vcf} successfully generated!")
     click.echo("Pipeline execution completed!")
-    click.echo(f"{rSV_vcf} successfully generated!")
+    logger.info(f"{rSV_vcf} successfully generated!")
     click.echo("All steps completed successfully!")
-    
+
+    stats = {
+        "Total variants": f"{variant_count:,}",
+        "INV count": f"{inv_count:,}",
+        "nSV count": f"{single_sv_count:,}",
+        "Excluded SNP count": f"{len(snp_groups)}",
+        "Overlapping SVs": f"{variant_count - single_sv_count:,}",
+        "Overlapping SVs percentage": f"{percentage_sv_overlapped:.2f}%",
+        "Total variant groups": f"{total_groups:,}",
+        "Final rSV count": f"{rSV_count:,}"
+    }
+
     end_time = time.time()
-    total_time = end_time - start_time
-    hours, remainder = divmod(total_time, 3600)
-    minutes, seconds = divmod(remainder, 60)
-    
-    logging.basicConfig(
-        filename=os.path.join(out, f"{out}_make-meta.log"),
-        level=logging.INFO,
-        format="%(asctime)s - %(levelname)s - %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S",
-    )
-    log_messages = [
-        f"Total runtime: {int(hours)}:{int(minutes):02d}:{int(seconds):02d}",
-        f"Total variants: {variant_count:,}",
-        f"INV count: {inv_count:,}",
-        f"nSV count: {single_sv_count:,}",
-        f"Overlapping SVs: {(variant_count - single_sv_count):,}",
-        f"Overlap percentage: {percentage_sv_overlapped:.2f}%",
-        f"Total variant groups: {total_groups:,}",
-        f"Final rSV count: {rSV_count:,}"
-    ]
-    
-    for msg in log_messages:
-        click.echo(msg)
-        logging.info(msg)
+    runtime = end_time - start_time
+    log_step("Summary")
+    log_summary_block(
+        cmd=get_clean_command(),
+        start=start_time,
+        duration=runtime,
+        stats=stats)
+    log_all_warnings_and_errors()
