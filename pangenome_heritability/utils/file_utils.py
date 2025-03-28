@@ -1,107 +1,59 @@
-import os
-import shutil
-from pathlib import Path
-from typing import Union, List
-
-def ensure_directory(path: Union[str, Path]) -> Path:
-    """
-    Ensure a directory exists, creating it if necessary.
-    
-    Args:
-        path: Directory path to ensure
-        
-    Returns:
-        Path object of the ensured directory
-    """
-    path = Path(path)
-    path.mkdir(parents=True, exist_ok=True)
-    return path
-
-def cleanup_temp_files(directory: Union[str, Path], 
-                      patterns: List[str] = None) -> None:
-    """
-    Clean up temporary files matching specified patterns.
-    
-    Args:
-        directory: Directory containing temporary files
-        patterns: List of glob patterns to match files for deletion
-    """
-    if patterns is None:
-        patterns = ['*.tmp', '*.temp', '*_input.fasta']
-        
-    directory = Path(directory)
-    for pattern in patterns:
-        for file_path in directory.glob(pattern):
-            try:
-                if file_path.is_file():
-                    file_path.unlink()
-                elif file_path.is_dir():
-                    shutil.rmtree(file_path)
-            except Exception as e:
-                logger.warning(f"Failed to remove {file_path}: {str(e)}")
-
-def get_absolute_path(path: Union[str, Path]) -> Path:
-    """
-    Convert path to absolute path, expanding user and environment variables.
-    
-    Args:
-        path: Path to convert
-        
-    Returns:
-        Absolute Path object
-    """
-    return Path(os.path.expandvars(os.path.expanduser(str(path)))).resolve()
-
-# pangenome_heritability/utils/logging_utils.py
+import pysam
 import logging
-import sys
-from pathlib import Path
-from typing import Union, Optional
+import click
+import re
 
-def setup_logging(log_file: Optional[Union[str, Path]] = None,
-                 level: int = logging.INFO) -> None:
-    """
-    Setup logging configuration.
-    
-    Args:
-        log_file: Optional path to log file
-        level: Logging level
-    """
-    # Create logger
-    logger = logging.getLogger('pangenome_heritability')
-    logger.setLevel(level)
-    
-    # Create formatters
-    file_formatter = logging.Formatter(
-        '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-    )
-    console_formatter = logging.Formatter(
-        '%(message)s'
-    )
-    
-    # Create console handler
-    console_handler = logging.StreamHandler(sys.stdout)
-    console_handler.setLevel(level)
-    console_handler.setFormatter(console_formatter)
-    logger.addHandler(console_handler)
-    
-    # Create file handler if log_file is specified
-    if log_file:
-        log_file = Path(log_file)
-        log_file.parent.mkdir(parents=True, exist_ok=True)
-        file_handler = logging.FileHandler(str(log_file))
-        file_handler.setLevel(level)
-        file_handler.setFormatter(file_formatter)
-        logger.addHandler(file_handler)
+def check_vcf_vs_fasta(vcf_path: str, ref_path: str):
+    logger = logging.getLogger()
 
-def get_logger(name: str = None) -> logging.Logger:
-    """
-    Get logger instance.
+    # STEP 1: 提取 VCF 中实际使用的染色体 ID（遍历记录）
+    try:
+        with pysam.VariantFile(vcf_path) as vcf:
+            vcf_chroms = set(rec.chrom for rec in vcf.fetch())
+    except Exception as e:
+        logger.error(f"Failed to open or parse VCF file: {e}")
+        raise click.Abort()
 
-    Args:
-        name: Name of the logger. If None, use the root logger.
-    
-    Returns:
-        Configured logger instance.
-    """
-    return logging.getLogger(name)
+    if not vcf_chroms:
+        logger.warning("No variants found in VCF. Skipping chromosome consistency check.")
+        return
+
+    # STEP 2: 去除 'chr' 前缀
+    first_chrom = next(iter(vcf_chroms))
+    if first_chrom.startswith("chr"):
+        logger.info("Detected 'chr' prefix in VCF chromosomes. Stripping it from all chromosome names.")
+        vcf_chroms = {chrom[3:] if chrom.startswith("chr") else chrom for chrom in vcf_chroms}
+
+    # STEP 3: 特殊染色体编码
+    numeric = sorted([int(c) for c in vcf_chroms if re.fullmatch(r"\d+", c)])
+    non_numeric = sorted([c for c in vcf_chroms if not re.fullmatch(r"\d+", c)])
+    max_chr = max(numeric) if numeric else 0
+    encoding = {name: max_chr + i + 1 for i, name in enumerate(non_numeric)}
+
+    if encoding:
+        logger.info("Special chromosome name encoding (for ordering):")
+        for name, code in encoding.items():
+            logger.info(f"  - {name} => {code}")
+
+    # STEP 4: 提取参考序列中的染色体
+    try:
+        ref = pysam.FastaFile(ref_path)
+        ref_chroms = set(ref.references)
+    except Exception as e:
+        logger.error(f"Failed to open reference FASTA file: {e}")
+        raise click.Abort()
+
+    # STEP 5: 比对是否缺失
+    missing = sorted(chrom for chrom in vcf_chroms if chrom not in ref_chroms)
+    if missing:
+        logger.error("The following chromosomes are present in the VCF but missing from the reference FASTA:")
+        for chrom in missing:
+            logger.error(f"  - {chrom} (expected '> {chrom}' in FASTA)")
+
+        logger.error("Chromosomes available in the reference FASTA:")
+        for ref_name in sorted(ref_chroms):
+            logger.error(f"  > {ref_name}")
+
+        logger.error("Aborting due to inconsistent chromosome naming between VCF and reference FASTA.")
+        raise click.Abort()
+
