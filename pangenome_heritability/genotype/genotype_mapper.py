@@ -6,11 +6,17 @@ import re
 import subprocess
 import pysam
 from typing import Dict, NamedTuple
-from ..config import Config  # Ensure this module contains the Config class
+from ..config import Config  
 import numpy as np
 import json
 import glob
 from concurrent.futures import ThreadPoolExecutor
+from ..utils.logging_utils import get_logger, log_tqdm_summary
+
+
+logger = get_logger(__name__)
+
+
 
 class PlinkFiles(NamedTuple):
     bed: str
@@ -22,7 +28,7 @@ def load_csv(file_path: str) -> pd.DataFrame:
     try:
         csv_data = pd.read_csv(file_path, sep=',', encoding='utf-8')
     except Exception as e:
-        click.echo(f"Error reading CSV file: {e}")
+        logger.warning(f"Error reading CSV file: {e}")
         raise
 
     csv_data.columns = csv_data.columns.str.strip()
@@ -55,7 +61,7 @@ def replace_seq_with_variants(csv_data: pd.DataFrame, variants: Dict[str, list])
             if group in variants and seq_id < len(variants[group]):
                 csv_data.at[index, 'sequence_id'] = variants[group][seq_id]
             else:
-                click.echo(f"No variant available for {group} at sequence {seq_id}")
+                logger.warning(f"No variant available for {group} at sequence {seq_id}")
     return csv_data
 
 def process_comparison_column(csv_data: pd.DataFrame) -> pd.DataFrame:
@@ -78,339 +84,6 @@ def process_comparison_column(csv_data: pd.DataFrame) -> pd.DataFrame:
     csv_data = csv_data[csv_data['diff_array'].notnull()]
     return csv_data
 
-def extract_group_from_chromosome_group(csv_data: pd.DataFrame) -> pd.DataFrame:
-    """Extract 'group' information from 'chromosome_group' column."""
-    if 'group' not in csv_data.columns:
-        click.echo("Generating 'group' column from 'chromosome_group'.")
-        # Split based on the last underscore and take the last part (e.g., '2' from 'Group_2_1')
-        csv_data['group'] = csv_data['chromosome_group'].apply(lambda x: x.split('_')[-1])
-    return csv_data
-
-def add_start_column_if_missing(csv_data: pd.DataFrame) -> pd.DataFrame:
-    """Generate 'start' column from 'sequence_id'."""
-    if 'start' not in csv_data.columns:
-        click.echo("Generating 'start' column from 'sequence_id'.")
-        def extract_start(seq_id):
-            match = re.match(r'Variant_(\d+)_(\d+)_(\d+)_(\d+)', seq_id)
-            if match:
-                return int(match.group(3))  # Extract start position
-            else:
-                return None
-        csv_data['start'] = csv_data['sequence_id'].apply(extract_start)
-        if csv_data['start'].isnull().any():
-            raise ValueError("Failed to extract 'start' from some 'sequence_id' entries.")
-    return csv_data
-
-def create_ped_and_map_files(csv_data: pd.DataFrame, vcf_file: str, output_prefix: str):
-    """Generate PED and MAP files from CSV and VCF data."""
-    
-    vcf = pysam.VariantFile(vcf_file)
-    samples = list(vcf.header.samples)
-    
-    
-    variant_data = {}
-    for record in vcf:
-        chromosome = str(record.contig)
-        position = str(record.pos)
-        key = (chromosome, position)
-        variant_data[key] = {sample: record.samples[sample]['GT'] for sample in samples}
-    vcf.close()
-
-    
-    def combine_genotypes(existing, new):
-        def combine_gt(gt1, gt2):
-            if None in gt1 or -1 in gt1:
-                return gt2
-            if None in gt2 or -1 in gt2:
-                return gt1
-            return tuple(max(a, b) for a, b in zip(gt1, gt2))
-        return {sample: combine_gt(existing.get(sample, (0, 0)), new.get(sample, (0, 0))) 
-                for sample in samples}
-
-    
-    ped_data = {sample: [sample, sample, '0', '0', '0', '-9'] for sample in samples}
-    map_data = []
-
-    
-    for _, row in csv_data.iterrows():
-        try:
-            
-            chromosome = row['chromosome_group'].split('_')[1]
-            group = row['chromosome_group'].split('_')[-1]
-            
-            
-            meta_array = eval(row['meta_array'])
-            diff_array = eval(row['diff_array'])
-            
-            
-            for i, (meta, diff) in enumerate(zip(meta_array, diff_array)):
-                pos = str(meta['pos'])
-                ref = meta['ref']
-                alt = meta['alt']
-                
-                
-                vcf_key = (str(chromosome), pos)
-                if vcf_key not in variant_data:
-                    continue
-
-                
-                variant_count = diff_array.count(1)
-                variant_type = "SV" if variant_count == 1 else "RSV"
-                
-                
-                variant_id = f"{variant_type}_chr{chromosome}_grp{group}_pos{pos}_{ref}_{alt}"
-                
-               
-                map_row = [chromosome, variant_id, '0', pos]
-                map_data.append(map_row)
-                
-                
-                for sample in samples:
-                    gt = variant_data[vcf_key].get(sample, (0, 0))
-                   
-                    if None in gt or -1 in gt:
-                        genotype_str = '0 0'
-                    else:
-                        genotype_str = ' '.join(map(str, [gt[0] + 1, gt[1] + 1]))
-                    ped_data[sample].append(genotype_str)
-                    
-        except Exception as e:
-            click.echo(f"Error processing row: {str(e)}")
-            continue
-
-    
-    with open(f"{output_prefix}.ped", 'w') as f:
-        for sample, data in ped_data.items():
-            f.write('\t'.join(map(str, data)) + '\n')
-
-    
-    with open(f"{output_prefix}.map", 'w') as f:
-        for row in map_data:
-            f.write('\t'.join(map(str, row)) + '\n')
-
-def create_vcf_file(csv_data: pd.DataFrame, vcf_file: str, grouped_variants: str, output_prefix: str):
-    """Generate new VCF file based on CSV data and original VCF"""
-    import pysam
-    
-    # Open VCF file and get sample information
-    vcf = pysam.VariantFile(vcf_file)
-    samples = list(vcf.header.samples)
-    
-    # Create output files for SV and rSV
-    output_files = {
-        #'SV': f"{output_prefix}.sv.vcf"#,
-        'rSV': f"{output_prefix}.rSV.vcf"
-    }
-    
-    # Extract variant data from VCF
-    variant_data = {}
-    click.echo("Reading VCF file...")
-    for record in vcf:
-        chromosome = str(record.contig)
-        position = int(record.pos)
-        key = (chromosome, position)
-        variant_data[key] = record
-    vcf.close()
-    
-    # Create files for each variant type and write headers
-    #for variant_type, output_vcf in output_files.items():
-    output_vcf = output_files['rSV']
-    with open(output_vcf, 'w') as f:
-        f.write('##fileformat=VCFv4.2\n')
-        f.write('##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">\n')
-        f.write('#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\t' + '\t'.join(samples) + '\n')
-    
-    # Process data by group
-    for group_name, group_data in csv_data.groupby('chromosome_group'):
-        try:
-            #click.echo(f"Processing group: {group_name}")
-            
-            # Get meta_array and diff_array
-            if 'meta_array' not in group_data.columns or 'diff_array' not in group_data.columns:
-                #click.echo(f"Group {group_name} missing required columns")
-                continue
-                
-            meta_array = eval(group_data.iloc[0]['meta_array'])
-            diff_array_matrix = [eval(row['diff_array']) for _, row in group_data.iterrows()]
-            
-            # Get variant information
-            variants_info = get_variants_info(grouped_variants, group_name)
-            if not variants_info:
-                continue
-            
-            # Process variants for each column
-            for col_idx in range(len(meta_array)):
-                # Get diff values for this column across all rows
-                col_diffs = [diff[col_idx] if col_idx < len(diff) else 0 for diff in diff_array_matrix]
-                variant_count = sum(col_diffs)
-                
-                # Determine variant type based on variant_count
-                variant_type = 'rSV'
-                output_vcf = output_files[variant_type]
-                
-                # Get variant information
-                meta = meta_array[col_idx]
-                ref = meta['ref']
-                alt = meta['alt']
-                
-                # Get variants marked as 1
-                variant_indices = [i for i, diff in enumerate(col_diffs) if diff == 1]
-                if not variant_indices:
-                    continue
-                
-                # Use first variant position as representative
-                chrom, pos = variants_info[variant_indices[0]]
-                key = (str(chrom), int(pos))
-                if key not in variant_data:
-                    continue
-                
-                record = variant_data[key]
-                
-                # Format genotype data, replace None with "."
-                formatted_genotypes = []
-                for sample in samples:
-                    if sample in record.samples:
-                        gt = record.samples[sample]['GT']
-                        if gt is None:
-                            formatted_genotypes.append('./.')
-                        else:
-                            formatted_genotypes.append('/'.join(map(str, [x if x is not None else '.' for x in gt])))
-                    else:
-                        formatted_genotypes.append('./.')
-                
-                # Write VCF line
-                with open(output_vcf, 'a') as f:
-                    vcf_line = [
-                        chrom,
-                        str(pos),
-                        f"{variant_type}_chr{chrom}_grp{group_name}_pos{pos}",
-                        ref,
-                        alt,
-                        '.',
-                        'PASS',
-                        f"TYPE={variant_type};GROUP={group_name}",
-                        'GT'
-                    ] + formatted_genotypes
-                    
-                    f.write('\t'.join(map(str, vcf_line)) + '\n')
-                
-        except Exception as e:
-            click.echo(f"Error processing group {group_name}: {str(e)}")
-            continue
-
-    click.echo("VCF file generation complete")
-
-def convert_to_plink_with_variants(config: Config):
-    """Main function: replaces variant names and generates PLINK files."""
-    csv_data = load_csv(config.grouped_variants_file)
-    click.echo("Initial Columns:", csv_data.columns.tolist())
-
-    
-    csv_data = process_comparison_column(csv_data)
-    click.echo("Columns after processing 'comparison':", csv_data.columns.tolist())
-
-    
-    if 'chromosome_group' not in csv_data.columns:
-        raise ValueError("Missing 'chromosome_group' column in the input CSV.")
-
-    
-    variants = parse_fasta(config.ref_fasta)
-    csv_data = replace_seq_with_variants(csv_data, variants)
-
-    
-    csv_data = extract_group_from_chromosome_group(csv_data)
-
-    
-    csv_data = add_start_column_if_missing(csv_data)
-
-    
-    if 'chromosome' not in csv_data.columns or 'position' not in csv_data.columns:
-        def extract_chrom_pos(seq_id):
-            match = re.match(r'Variant_(\d+)_(\d+)_(\d+)_(\d+)', seq_id)
-            if match:
-                chrom, _, pos, _ = match.groups()
-                return chrom, pos
-            else:
-                return None, None
-        csv_data[['chromosome', 'position']] = csv_data['sequence_id'].apply(
-            lambda x: pd.Series(extract_chrom_pos(x))
-        )
-
-   
-    updated_csv_path = os.path.join(config.output_dir, "updated_processed_comparison_results.csv")
-    csv_data.to_csv(updated_csv_path, index=False)
-    click.echo(f"Updated CSV saved to {updated_csv_path}")
-
-    
-    output_prefix = os.path.join(config.output_dir, "plink_output")
-    create_ped_and_map_files(csv_data, config.vcf_file, output_prefix)
-
-    
-    subprocess.run([
-        'plink',
-        '--file', output_prefix,
-        '--make-bed',
-        '--out', output_prefix
-    ], check=True)
-
-    click.echo(f"PLINK files saved in {config.output_dir}")
-
-def parse_variant_id(variant_id):
-    """Parse variant information from sequence ID in variants.fasta
-    Example: Variant_2_2_50381_50381 -> (2, 50381)
-    """
-    parts = variant_id.split('_')
-    if len(parts) >= 5 and parts[0] == 'Variant':
-        chromosome = parts[1]
-        pos = int(parts[3])
-        return chromosome, pos
-    return None, None
-
-def get_variants_info(fasta_file, group_name):
-    """Get variant information for specified group from variants.fasta
-    Example:
-    >Group_2_1
-    ACGT...
-    >Variant_2_1_50381_50381
-    ACGT...
-    >Variant_2_1_50382_50382
-    ACGT...
-    """
-    variants = []
-    group_found = False
-    
-    #click.echo(f"Reading variant information for {group_name} from {fasta_file}")
-    with open(fasta_file) as f:
-        for line in f:
-            if line.startswith('>'):
-                header = line.strip()[1:]
-                #click.echo(f"Reading header: {header}")
-                
-                if header == group_name:
-                    group_found = True
-                    #click.echo(f"Found target group: {group_name}")
-                    continue
-                
-                if group_found:
-                    if header.startswith('Group_'):
-                        #click.echo(f"Encountered next group, ending current group processing")
-                        break
-                    elif header.startswith('Variant_'):
-                        # Parse variant ID, example: Variant_2_1_50381_50381
-                        parts = header.split('_')
-                        if len(parts) >= 5:
-                            chrom = parts[1]
-                            pos = int(parts[3])
-                            variants.append((chrom, pos))
-                            #click.echo(f"Added variant: chr{chrom}:{pos}")
-    
-    #click.echo(f"Found {len(variants)} variants for group {group_name}")
-    return variants
-
-
-##############
-
-
 # -----------------------------------
 # Step 1: 处理 diff_array，生成 D_matrix
 # -----------------------------------
@@ -419,7 +92,7 @@ def process_diff_array(input_csv: str, output_dir: str):
     input_path = os.path.abspath(input_csv)  # 将传入的相对路径转换为绝对路径
 
     if not os.path.exists(input_path):
-        click.echo(f"File not found: {input_path}")
+        logger.warning(f"File not found: {input_path}")
         return
 
     df = pd.read_csv(input_path)
@@ -436,15 +109,11 @@ def process_diff_array(input_csv: str, output_dir: str):
         try:
             diff_array = json.loads(diff_array_str)
         except json.JSONDecodeError:
-            click.echo(f"Error decoding diff_array for {group_name}. Skipping this row.")
+            logger.warning(f"Error decoding diff_array for {group_name}. Skipping this row.")
             continue
-
-        #if group_name not in group_meta_pos:
-            #group_meta_pos[group_name] = meta_pos_value
 
         if group_name not in group_dict:
             group_dict[group_name] = []
-        # click.echo(f'diff:{diff_array}')
         group_dict[group_name].append((seq_id, diff_array[1:])) # 去掉diff_array第一项
 
     for group_name, data in group_dict.items():
@@ -457,10 +126,8 @@ def process_diff_array(input_csv: str, output_dir: str):
         rows = [[seq_id] + diff_array for seq_id, diff_array in zip(seq_ids, diff_arrays)]
         df_new = pd.DataFrame(rows, columns=columns)
 
-        #meta_pos_value = group_meta_pos.get(group_name, 'unknown')
         output_file = os.path.join(output_dir, f"{group_name}_D_matrix.csv")
         df_new.to_csv(output_file, index=False)
-        #click.echo(f"Matrix for {group_name} saved to {output_file}")
 
 # -----------------------------------
 # Step 2: 读取 VCF，生成 X_matrix
@@ -487,7 +154,6 @@ def process_vcf_to_x_matrix(vcf_name: str, output_dir: str):
 
         for sample in sample_names:
             gt = record.samples[sample]["GT"]
-            #click.echo(f"gt:{gt}")
             if gt == (None, None):  # 处理缺失值
                 gt_row.append("./.")
             else:
@@ -507,10 +173,6 @@ def process_vcf_to_x_matrix(vcf_name: str, output_dir: str):
         elif gt == '1/1': return 2
         else: return -1
 
-    # 对样本列应用基因型转换# 0    0
-                          #  1    0
-                        # 2    0
-        #Name: SL516_SL516, dtype: int64
     for sample in sample_names:
         df_vcf[sample] = df_vcf[sample].apply(transform_gt) 
 
@@ -535,7 +197,7 @@ def process_vcf_to_x_matrix(vcf_name: str, output_dir: str):
         vcf_row_index = df_vcf[(df_vcf["#CHROM"].astype(str) == chrom) & (df_vcf["POS"] == pos)].index
 
         if vcf_row_index.empty:
-            click.echo(f"Warning: #CHROM {chrom}, POS {pos} not found in VCF for {csv_file}")
+            logger.warning(f"Warning: #CHROM {chrom}, POS {pos} not found in VCF for {csv_file}")
             continue
 
         start_idx = vcf_row_index[0]
@@ -555,10 +217,10 @@ def process_vcf_to_x_matrix(vcf_name: str, output_dir: str):
         csv_data.to_csv(output_file, index=False)
 
         if not os.path.exists(output_file):
-            click.echo(f"Warning: {output_file} not created!")
+            logger.warning(f"Warning: {output_file} not created!")
         else:
             continue
-            #click.echo(f"Saved modified CSV: {output_file}")
+
     return sample_names
 # -----------------------------------
 # Step 3: 计算 T_matrix
@@ -566,7 +228,6 @@ def process_vcf_to_x_matrix(vcf_name: str, output_dir: str):
 
 def compute_t_matrix(output_dir: str):
     """ 计算 D_matrix × X_matrix 并保存 T_matrix """
-    
     # 确保输出目录是绝对路径
     output_dir = os.path.abspath(output_dir)
 
@@ -581,7 +242,7 @@ def compute_t_matrix(output_dir: str):
 
     # 确保 D_matrix 和 X_matrix 文件一一对应
     if len(d_files) != len(x_files):
-        click.echo("Warning: D_matrix and X_matrix file counts do not match.")
+        logger.warning("Warning: D_matrix and X_matrix file counts do not match.")
         return
 
     for d_file, x_file in zip(d_files, x_files):
@@ -589,7 +250,7 @@ def compute_t_matrix(output_dir: str):
         match_x = re.match(r'Group_(\d+)_(\d+)_(\d+)_X_matrix\.csv', x_file)
 
         if not match_d or not match_x:
-            click.echo(f"Skipping unmatched files: {d_file}, {x_file}")
+            logger.warning(f"Warning: Skipping unmatched files: {d_file}, {x_file}")
             continue
 
         # 使用完整的路径读取文件
@@ -611,7 +272,6 @@ def compute_t_matrix(output_dir: str):
         # 保存 T_matrix 到指定目录
         t_matrix_file = os.path.join(output_dir, d_file.replace("_D_matrix.csv", "_T_matrix.csv"))
         t_df.to_csv(t_matrix_file, index=True, header=True)
-        #click.echo(f"Saved T matrix: {t_matrix_file}")
 
 import concurrent.futures
 from tqdm import tqdm
@@ -746,8 +406,6 @@ def save_rSV_meta(input: str, output: str, threads: int):
     click.echo(f"{file_name} generated!")
 
 
-
-
 ######下面提取T矩阵对应的GT矩阵
 from concurrent.futures import ThreadPoolExecutor
 def convert_gt(value):
@@ -876,13 +534,11 @@ def extract_vcf_sample(input_csv: str, output_gt: str, out: str, threads: int):
         error_df = pd.DataFrame(error_log, columns=["Original Line Number", "Error Details"])
         error_path = os.path.join(os.path.dirname(output_gt), "processing_errors.csv")
         error_df.to_csv(error_path, index=False)
-        click.echo(f"Warning: A total of {len(error_log)} errors were detected. See {error_path} for details.")
+        logger.warning(f"Warning: A total of {len(error_log)} errors were detected. See {error_path} for details.")
 
-
-    click.echo(f"GT matrix successfully generated with {len(valid_data)} valid records.")
+    logger.info(f"GT matrix successfully generated with {len(valid_data)} valid records.")
     return len(valid_data), group_count, gt_buffer
 # 注：需要保留原convert_gt和其他辅助函数的实现
-
 
 ########生成rSV的VCF
 
@@ -910,7 +566,7 @@ def vcf_generate(sample_names: list, csv_file: str, gt_buffer: str, output_fille
             # 组装 VCF 结构
             vcf_data.append([chrom, pos, group_name, ref, alt, ".", ".", "TYPE=rSV", "GT"])
         except Exception as e:
-            click.echo(f"Error processing row {index}: {e}")
+            logger.warning(f"Error processing row {index}: {e}")
             continue
 
     # 转换为 DataFrame
@@ -919,7 +575,7 @@ def vcf_generate(sample_names: list, csv_file: str, gt_buffer: str, output_fille
 
     # **按 CHROM 和 POS 进行排序**
     vcf_df.sort_values(by=["#CHROM", "POS"], inplace=True)
-    #click.echo(vcf_df.columns)
+
     """ 合并 VCF 数据和 GT 数据，直接写入最终文件 """
     with open(output_filled_vcf, "w") as out_vcf:
         # 写入头部信息
@@ -945,7 +601,6 @@ def detect_abnormal(out: str, config):
     # 添加前缀 'out/' 到每个文件名
     directory = out  # 'out' 是你要加前缀的目录
     t_matrix_files = [os.path.join(directory, file_name) for file_name in t_matrix_files]
-    #click.echo(t_matrix_files)
     # 遍历所有 T_matrix 文件
     for t_file in t_matrix_files:
         df = pd.read_csv(t_file, index_col=0)  # 读取 T_matrix，第一列作为索引
