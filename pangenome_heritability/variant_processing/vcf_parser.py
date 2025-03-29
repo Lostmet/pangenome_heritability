@@ -72,11 +72,12 @@ def process_variants(config) -> List[VariantGroup]:
         
     all_variants = []
     single_group = [] 
-    inv_group = [] # 加一个inv_group
-    var_not_align_count = 0 # 加一个没有左对齐的数量的count
+    inv_group = [] 
+    var_not_align_count = 0 
     var_not_align_list = []
     var_not_standard_count = 0
     snp_group = []
+    var_not_aligned_group = []
     with tqdm(desc="Reading variants",unit='variants') as pbar:
         try:
             var_bp_all = 0
@@ -94,6 +95,7 @@ def process_variants(config) -> List[VariantGroup]:
                     inv_group.append(inv) # 扔到新的group里面
                 else:
                     if_snp = False
+                    if_not_aligned = False
                     # 修改pos，ref和alt，左对齐
                     chrom = record.chrom
                     start = record.pos
@@ -101,17 +103,17 @@ def process_variants(config) -> List[VariantGroup]:
                     ref = record.ref
                     alt = list(record.alts)
                     samples={s: record.samples[s]['GT'] for s in record.samples}
-                    end = pos + abs(len(ref)-len(alt[0])) -1
                     ref_len = len(ref)
                     alt_len = len(alt[0])
+                    end = pos + ref_len -1
                     if ref_len == 1 and alt_len == 1: # 混杂了SNP
                         snp = Variant(
-                            chrom=record.chrom,
-                            start=record.pos,
-                            end=record.pos + len(record.ref) - 1,
-                            ref=record.ref,
-                            alt=list(record.alts),
-                            samples={s: record.samples[s]['GT'] for s in record.samples}
+                            chrom=chrom,
+                            start=pos,
+                            end=end,
+                            ref=ref,
+                            alt=alt,
+                            samples=samples
                         )
                         snp_group.append(snp) # 扔到新的group里面   
                         if_snp = True                     
@@ -119,33 +121,43 @@ def process_variants(config) -> List[VariantGroup]:
                     elif ref_len != 1 and alt_len != 1: # 没有左对齐显然
                         if var_not_align_count == 0:
                             var_not_align_list.append(f'chrom:{chrom}, pos:{pos}')
-                            logger.warning(f"Warning: Unaligned variant detected, chrom: {chrom}, pos: {pos}. Please check; the software will attempt to automatically left-align.")
-                        else:
-                            var_not_align_list.append(f'chrom:{chrom}, pos:{pos}')
-                        var_not_align_count += 1
-                        if ref_len == alt_len:
-                            pos += ref_len - 1
-                            ref = ref[0]
-                            alt = list(alt[0][0])
-                        elif ref_len < alt_len:
-                            pos += ref_len - 1
-                            ref = ref[0]
-                            alt = list(alt[0][ref_len:])
-                        elif ref_len > alt_len:
-                            pos += alt_len - 1
-                            alt = list(alt[0][0])
-                            ref = ref[alt_len:]
-                    if ref[0] != alt[0][0]:
-                        if var_not_standard_count == 0:
-                            var_not_align_list.append(f'chrom:{chrom}, pos:{pos}')
-                            logger.warning(f"Detected variant where either REF or ALT is 1 bp long, but the first base differs, indicating possible complex substitution events, chrom: {chrom}, pos: {pos}. Please check the VCF file.")
+                            logger.warning(f"Warning: Unaligned variant detected, chrom: {chrom}, pos: {pos}. \
+                                           \nPlease check; the software will save these variants into nSV.vcf")
                         else:
                             var_not_align_list.append(f'chrom:{chrom}, pos:{pos}')
 
-                        
+                        var_not_align_count += 1
+                        var_not_aligned = Variant(
+                            chrom=chrom,
+                            start=pos,
+                            end=end,
+                            ref=ref,
+                            alt=alt,
+                            samples=samples
+                        )
+                        var_not_aligned_group.append(var_not_aligned)
+                        if_not_aligned = True
+
+                    elif ref[0] != alt[0][0]:
+                        if var_not_standard_count == 0:
+                            var_not_align_list.append(f'chrom:{chrom}, pos:{pos}')
+                            logger.warning(f"Detected variant where either REF or ALT is 1 bp long, but the first base differs, indicating possible complex substitution events\
+                                            \nchrom: {chrom}, pos: {pos}. Please check the VCF file.")
+                        else:
+                            var_not_align_list.append(f'chrom:{chrom}, pos:{pos}')
                         var_not_standard_count += 1
+                        var_not_aligned = Variant(
+                            chrom=chrom,
+                            start=pos,
+                            end=end,
+                            ref=ref,
+                            alt=alt,
+                            samples=samples
+                        )
+                        var_not_aligned_group.append(var_not_aligned)
+                        if_not_aligned = True
                     
-                    if not if_snp:
+                    if (if_snp == False) and (if_not_aligned == False):
                         variant = Variant(
                             chrom=chrom,
                             start=pos,
@@ -171,14 +183,14 @@ def process_variants(config) -> List[VariantGroup]:
     variant_groups = []
     inv_groups = []
     snp_groups = []
+    var_not_aligned_groups = []
     current_group = None
-    inv_current_group = None
-    snp_current_group = None
     inv_count = len(inv_group)
     snp_count = len(snp_group)
+    var_abnormal_count = var_not_align_count +  var_not_standard_count
     variant_count = len(all_variants) + inv_count + snp_count
 
-    if var_not_align_count +  var_not_standard_count != 0:
+    if var_abnormal_count != 0:
         log_path = os.path.join(config.output_dir, "VCF_normalization_failed.log", )
         logger.warning(
     f"Warning: A total of {var_not_align_count + var_not_standard_count} variants may not be properly left-aligned.\n"
@@ -195,48 +207,31 @@ def process_variants(config) -> List[VariantGroup]:
                 f.write(item + "\n")
 
     # 处理inv_group
-    for inv in inv_group:
-        if inv_current_group is None:
-            # First variant
+    if inv_group:
+        for inv in inv_group:
             inv_current_group = VariantGroup(inv.chrom)
             inv_current_group.add_variant(inv)
-        else:
-            # If chromosome is different or they do not overlap, start a new group
-            if (inv_current_group.chrom != inv.chrom or 
-                not inv_current_group.overlaps(inv)):
-                inv_groups.append(inv_current_group)
-                inv_current_group = VariantGroup(inv.chrom)
-                inv_current_group.add_variant(inv)
-            else:
-                # Still in the same group
-                inv_current_group.add_variant(inv)
+            inv_groups.append(inv_current_group)
 
-    click.echo(f"Excluding {inv_count} inversion(s)") # 记录排除掉的inv的个数
-    # Add the last group if it exists
-    if inv_current_group is not None:
-        inv_groups.append(inv_current_group)
+        logger.info(f"Excluding {inv_count} inversion(s)") # 记录排除掉的inv的个数
 
     # 处理snp_group
-    for snp in snp_group:
-        if snp_current_group is None:
-            # First variant
+    if snp_group:
+        for snp in snp_group:
             snp_current_group = VariantGroup(snp.chrom)
             snp_current_group.add_variant(snp)
-        else:
-            # If chromosome is different or they do not overlap, start a new group
-            if (snp_current_group.chrom != snp.chrom or 
-                not snp_current_group.overlaps(snp)):
-                snp_groups.append(snp_current_group)
-                snp_current_group = VariantGroup(snp.chrom)
-                snp_current_group.add_variant(snp)
-            else:
-                # Still in the same group
-                snp_current_group.add_variant(snp)
+            snp_groups.append(snp_current_group)
 
-    click.echo(f"Excluding {snp_count} SNP(s)") # 记录排除掉的snp的个数
-    # Add the last group if it exists
-    if snp_current_group is not None:
-        snp_groups.append(snp_current_group)
+        logger.warning(f"Excluding {snp_count} SNP(s)") # 记录排除掉的snp的个数
+    # 处理var_not_aligned_group
+    if var_not_aligned_group:
+        for var in var_not_aligned_group:
+            var_current_group = VariantGroup(var.chrom)
+            var_current_group.add_variant(var)
+            var_not_aligned_groups.append(var_current_group)
+
+        logger.warning(f"Excluding {var_abnormal_count} variant(s) of not normalized")
+
 
     with tqdm(desc="Grouping variants", total=variant_count, unit="variants") as pbar:
         for variant in all_variants:
@@ -273,6 +268,10 @@ def process_variants(config) -> List[VariantGroup]:
     for i in range(len(inv_groups)):
         single_group.append(inv_groups[i])
     single_sv_count += len(inv_groups)
+
+    for i in range(len(var_not_aligned_groups)):
+        single_group.append(var_not_aligned_groups[i])
+    single_sv_count += len(var_not_aligned_groups)
     
     ### multi_group1:{'chrom': '2', 'variants': [Variant(chrom='2', start=906670, end=906670, ref='A', alt=['ATATATATATATA'], samples={'SL001_SL001':
     for i in range(len(variant_groups)):
