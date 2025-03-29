@@ -51,7 +51,7 @@ def adjust_variants_for_insertions(ref_seq: str, max_insertions: Dict[int, int],
 
     if len(variant.ref) > 1 and len(variant.alt[0]) == 1:
         # deletion
-        ref_list[rel_start:rel_end] = ['-'] * (len(variant.ref) - 1)
+        ref_list[rel_start:rel_end - 1] = ['-'] * (len(variant.ref) - 1)
 
         for pos, max_ins_length in sorted(max_insertions.items()):
             blank = ['-'] * (max_ins_length - 1)
@@ -95,7 +95,7 @@ def generate_fasta_sequences(config: Config, variant_groups: Dict[str, List[Vari
     def process_group(chrom, i, group):
 
         start = group.start - 1
-        end = group.end + 1
+        end = group.end
         ref_seq = ref_genome.fetch(chrom, start, end).upper()
 
         max_insertions, has_insertion = get_max_insertions(group.variants, start)
